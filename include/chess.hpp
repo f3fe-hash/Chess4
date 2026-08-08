@@ -100,4 +100,17 @@ public:
     bool IsCheck();
     bool IsCheckMate();
     bool IsStaleMate();
+
+    uint8_t CountPawns();
+    uint8_t CountKnights();
+    uint8_t CountBishops();
+    uint8_t CountRooks();
+    uint8_t CountQueens();
+    uint8_t CountKings();
+
+    inline bool GetTurnColor()
+    { return turn; }
+
+    inline void SetTurnColor(bool turn_color)
+    { turn = turn_color; }
 };
