@@ -124,6 +124,40 @@ struct Move
     CastlingRights prev_castling_rights;
 };
 
+struct ZobristTable 
+{
+    // 12 pieces (indices 0-5 White, 6-11 Black) across 64 squares
+    uint64_t pieces[12][64];
+    // 16 combinations of castling rights
+    uint64_t castling[16];
+    // Key toggled when it is Black's turn to move
+    uint64_t side_to_move;
+
+    ZobristTable() 
+    {
+        // Simple, predictable LCG to guarantee exact cross-platform values
+        uint64_t state = 1804289383; 
+        auto next_rand = [&]() mutable -> uint64_t {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            return state * 0x2545F4914F6CDD1DULL;
+        };
+
+        for (int p = 0; p < 12; ++p)
+            for (int s = 0; s < 64; ++s)
+                pieces[p][s] = next_rand();
+
+        for (int c = 0; c < 16; ++c)
+            castling[c] = next_rand();
+
+        side_to_move = next_rand();
+    }
+};
+
+// Global instance of keys initialized once at application startup
+inline const ZobristTable zobrist_keys;
+
 // 64 square bitboard.
 using Bitboard = uint64_t;
 
@@ -151,6 +185,8 @@ class ChessBoard
 
     CastlingRights castling_rights;
 
+    uint64_t zobrist_hash;
+
     void UpdateOccupancyBitboards();
     void UpdateAttackBitboards();
 
@@ -175,6 +211,14 @@ class ChessBoard
         Piece king);
 
     bool IsSquareAttacked(Square square, TurnColor byColor);
+
+    inline int GetZobristPieceIndex(Piece piece) const 
+    {
+        uint8_t type = piece & 0x07;
+        uint8_t color = piece & 0x18;
+        int base = (color == PIECE_COLOR_WHITE) ? 0 : 6;
+        return base + (type - 1);
+    }
     
 public:
     ChessBoard();
@@ -215,4 +259,9 @@ public:
 
     // Load board from FEN string. Returns true on success.
     bool LoadFEN(const std::string& fen);
+
+    uint64_t GenerateZobristHash() const;
+
+    // Fast, inline getter for the pre-calculated state hash
+    inline uint64_t GetZobristHash() const { return zobrist_hash; }
 };

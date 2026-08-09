@@ -90,9 +90,11 @@ void Console::run()
         }
         else if (cmd == "bot")
         {
-            MoveResult move = bot->Search(100);
+            const int min_depth = 3;
+            const int max_depth = 100;
+            MoveResult move = bot->Search(min_depth, max_depth);
             std::cout << "[BOT] Has searched to a depth of " << move.depth
-                << " and has searched  " << move.nodes_searched << " nodes."
+                << " and has searched " << move.nodes_searched << " nodes."
                 << std::endl;
 
             std::cout << "[BOT] Has decided to play " << MoveToString(move.move) << std::endl;
@@ -103,6 +105,27 @@ void Console::run()
         {
             Evaluation eval = bot->Evaluate();
             std::cout << "Current position evaluation: " << eval << "." << std::endl;
+        }
+        else if (cmd == "train")
+        {
+            DurationMs original_timelimit = bot->GetTimeLimit();
+
+            std::string timelimit_str = GetCommand("How long would you like to train the bot (seconds)? ");
+            double timelimit = std::stod(timelimit_str);
+            int timelimit_ms = (int)(timelimit * 1000);
+
+            std::cout << "Training..." << std::flush;
+
+            // Training time limit.
+            bot->SetTimeLimit(DurationMs(timelimit_ms));
+
+            // Train on the starting positon to warm up the transposition table.
+            bot->Search(5, 100);
+
+            std::cout << "Done." << std::endl;
+
+            // Reset to the original time limit
+            bot->SetTimeLimit(original_timelimit);
         }
         else if (cmd == "timelimit")
         {

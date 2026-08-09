@@ -307,7 +307,6 @@ Evaluation ChessBoardEvaluation::EvaluatePosition()
     Evaluation base = eval_white - eval_black;
 
     base += MOP_UP_MULTIPLIER * ComputeMopupBonus();
-    
     return base;
 }
 

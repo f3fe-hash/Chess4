@@ -1,6 +1,8 @@
 #include "bot.hpp"
 
+
 const int CHECKMATE_SCORE = 1e+9; // 1 billion
+
 
 ChessBot::ChessBot(std::shared_ptr<ChessBoard> _board) : evaluator(_board), board(_board)
 {}
@@ -31,13 +33,15 @@ static inline Evaluation PieceValue(Piece piece)
         case PIECE_TYPE_BISHOP: return 320;
         case PIECE_TYPE_ROOK:   return 500;
         case PIECE_TYPE_QUEEN:  return 900;
-        case PIECE_TYPE_KING:   return CHECKMATE_SCORE;
+        case PIECE_TYPE_KING:   return 1000;
         default:               return 0;
     }
 }
 
+
 static inline Evaluation MoveOrderScore(const Move& move)
 {
+    // Score how good a move is.
     if (move.captured == NULL_PIECE)
         return 0;
     
@@ -50,8 +54,10 @@ static inline Evaluation MoveOrderScore(const Move& move)
     return score;
 }
 
+
 bool ChessBot::CompareMoves(const Move& move1, const Move& move2)
 {
+    // Compare 2 moves' evaulation.
     Evaluation score1 = MoveOrderScore(move1);
     Evaluation score2 = MoveOrderScore(move2);
 
@@ -61,6 +67,7 @@ bool ChessBot::CompareMoves(const Move& move1, const Move& move2)
 
 void ChessBot::SortMoves(std::vector<Move>& moves)
 {
+    // Sort moves by how good they are, so alpha-beta can prune more.
     std::sort(moves.begin(), moves.end(), [this](const Move& a, const Move& b) {
         return CompareMoves(a, b);
     });
@@ -69,6 +76,8 @@ void ChessBot::SortMoves(std::vector<Move>& moves)
 
 int ChessBot::DepthExtension()
 {
+    // Simple depth extension calculation.
+
     int extension = 0;
     if (board->IsCheck())
         extension += 1;
@@ -77,7 +86,45 @@ int ChessBot::DepthExtension()
 }
 
 
-MoveResult ChessBot::Search(int max_depth)
+Evaluation ChessBot::SearchCore(Evaluation& alpha, Evaluation& beta, int depth, Move move, int move_idx)
+{
+    // Core of the search algorithm
+
+#define LOW_REDUCTION   1 // Move indexes [5 - 15)
+#define MID_REDUCTION   2 // Move indexes [15 - 35)
+#define HIGH_REDUCTION  4 // Move indexes [35 - inf.]
+
+    board->MakeMove(move);
+
+    int extension = DepthExtension();
+    if (extension == 0)
+    {
+        // No depth extension. Add late move reduction.
+
+        // Low reduction.
+        if (move_idx >= 5)
+            extension = -LOW_REDUCTION;
+        
+        // Mid reduction.
+        if (move_idx >= 15)
+            extension = -MID_REDUCTION;
+        
+        // High reduction.
+        if (move_idx >= 35)
+            extension = -HIGH_REDUCTION;
+    }
+    
+    int search_depth = std::max(0, depth - 1 + extension);
+
+    Evaluation eval = MainSearch(alpha, beta, search_depth);
+
+    board->UndoMove(move);
+
+    return eval;
+}
+
+
+MoveResult ChessBot::Search(int min_depth, int max_depth)
 {
     nodes_searched = 0;
     time_up = false;
@@ -86,7 +133,6 @@ MoveResult ChessBot::Search(int max_depth)
     std::vector<Move> moves = board->GetLegalMoves();
     bool maximizing = board->GetTurnColor() == TURN_WHITE;
 
-    // Sort the moves.
     SortMoves(moves);
 
     MoveResult best_move{};
@@ -95,7 +141,8 @@ MoveResult ChessBot::Search(int max_depth)
 
     int best_depth = 0;
 
-    for (int depth = 1; depth <= max_depth; ++depth)
+    // Iterative deepening loop.
+    for (int depth = min_depth; depth <= max_depth; ++depth)
     {
         if (time_limit.count() > 0 &&
             std::chrono::steady_clock::now() - search_start >= time_limit)
@@ -105,12 +152,14 @@ MoveResult ChessBot::Search(int max_depth)
 
         Evaluation alpha = INT32_MIN;
         Evaluation beta = INT32_MAX;
+
         MoveResult depth_move = best_move;
         Evaluation depth_eval = maximizing ? INT32_MIN : INT32_MAX;
-        bool depth_completed = true;
-        int max_effective_depth = depth;
 
-        for (int move_idx = 0; move_idx < (int)moves.size(); move_idx++)
+        bool depth_completed = true;
+
+        // Main search loop.
+        for (int move_idx = 0; move_idx < (int)moves.size(); ++move_idx)
         {
             if (time_limit.count() > 0 &&
                 std::chrono::steady_clock::now() - search_start >= time_limit)
@@ -124,22 +173,24 @@ MoveResult ChessBot::Search(int max_depth)
             board->MakeMove(move);
 
             int extension = DepthExtension();
-            if ((move_idx >= 5) && (extension == 0))
-                extension -= 1;
+
+            if (extension == 0)
+            {
+                if (move_idx >= 5)
+                    extension = -1;
+
+                if (move_idx >= 15)
+                    extension = -2;
+
+                if (move_idx >= 35)
+                    extension = -3;
+            }
 
             int search_depth = std::max(0, depth - 1 + extension);
-
-            max_effective_depth = std::max(max_effective_depth, search_depth);
 
             Evaluation eval = MainSearch(alpha, beta, search_depth);
 
             board->UndoMove(move);
-
-            if (time_up)
-            {
-                depth_completed = false;
-                break;
-            }
 
             if (time_up)
             {
@@ -156,7 +207,7 @@ MoveResult ChessBot::Search(int max_depth)
                     depth_move.eval = eval;
                 }
 
-                alpha = std::max(depth_eval, alpha);
+                alpha = std::max(alpha, eval);
             }
             else
             {
@@ -167,7 +218,7 @@ MoveResult ChessBot::Search(int max_depth)
                     depth_move.eval = eval;
                 }
 
-                beta = std::min(depth_eval, beta);
+                beta = std::min(beta, eval);
             }
 
             if (alpha >= beta)
@@ -177,7 +228,7 @@ MoveResult ChessBot::Search(int max_depth)
         if (!time_up && depth_completed)
         {
             best_move = depth_move;
-            best_depth = max_effective_depth;
+            best_depth = depth;
         }
         else
         {
@@ -185,46 +236,17 @@ MoveResult ChessBot::Search(int max_depth)
         }
     }
 
-    if (best_move.move.from == 0 && best_move.move.to == 0 && !moves.empty())
+    if (best_move.move.from == 0 &&
+        best_move.move.to == 0 &&
+        !moves.empty())
+    {
         best_move.move = moves[0];
+    }
 
     best_move.nodes_searched = nodes_searched;
     best_move.depth = best_depth;
+
     return best_move;
-}
-
-
-Evaluation ChessBot::SearchCore(Evaluation& alpha, Evaluation& beta, int depth, Move move, int move_idx)
-{
-    // Core of the search algorithm
-
-    board->MakeMove(move);
-
-    int extension = DepthExtension();
-    if (extension == 0)
-    {
-        // No extension.
-
-        // Low reduction.
-        if (move_idx >= 5)
-            extension = -1;
-        
-        // Mid reduction.
-        if (move_idx >= 15)
-            extension = -2;
-        
-        // High reduction.
-        if (move_idx >= 35)
-            extension = -3;
-    }
-    
-    int search_depth = std::max(0, depth - 1 + extension);
-
-    Evaluation eval = MainSearch(alpha, beta, search_depth);
-
-    board->UndoMove(move);
-
-    return eval;
 }
 
 
@@ -247,67 +269,127 @@ Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
     bool maximizing = board->GetTurnColor() == TURN_WHITE;
 
     // Checkmate / Stalemate
-    if (moves.size() == 0)
+    if (moves.empty())
     {
         if (board->IsCheck())
         {
-            // High depth left means we found it sooner/closer to the root
-            return maximizing ? (-CHECKMATE_SCORE - depth) : (CHECKMATE_SCORE + depth);
+            return maximizing
+                ? (-CHECKMATE_SCORE - depth)
+                : (CHECKMATE_SCORE + depth);
         }
-        else
-            return 0; // draw
+
+        return 0;
     }
 
-    // Leaf node
+    // Leaf node evaluation
     if (depth == 0)
-    {
         return evaluator.EvaluatePosition();
+
+    const uint64_t key = GetPositionKey();
+
+    // Transposition-table lookup.
+    if (transposition_table.contains(key))
+    {
+        const TranspositionEntry& entry = transposition_table.at(key);
+
+        if (entry.depth >= depth)
+        {
+            switch (entry.bound)
+            {
+                case TranspositionEntry::EXACT:
+                    return entry.eval;
+
+                case TranspositionEntry::LOWER_BOUND:
+                    alpha = std::max(alpha, entry.eval);
+                    break;
+
+                case TranspositionEntry::UPPER_BOUND:
+                    beta = std::min(beta, entry.eval);
+                    break;
+            }
+
+            if (alpha >= beta)
+                return entry.eval;
+        }
     }
 
     // Sort the moves.
     SortMoves(moves);
 
     //
-    //  Main search.
+    // Main search.
     //
-    
+
+    Evaluation result;
+
     if (maximizing)
     {
         for (int move_idx = 0; move_idx < (int)moves.size(); move_idx++)
         {
-            if (time_up) return 0; // Abort up the tree immediately
-            
             Move move = moves[move_idx];
 
-            Evaluation eval = SearchCore(alpha, beta, depth, move, move_idx);
+            Evaluation eval =
+                SearchCore(alpha, beta, depth, move, move_idx);
+
+            if (time_up)
+                return 0;
 
             if (eval >= beta)
             {
-                return beta; // Fail-high / Prune immediately
+                result = eval;
+
+                transposition_table[key] = {
+                    result,
+                    (uint8_t)depth,
+                    TranspositionEntry::LOWER_BOUND
+                };
+
+                return result;
             }
+
             alpha = std::max(alpha, eval);
         }
 
-        return alpha;
+        result = alpha;
     }
     else
     {
         for (int move_idx = 0; move_idx < (int)moves.size(); move_idx++)
         {
-            if (time_up) return 0; // Abort up the tree immediately
-
             Move move = moves[move_idx];
 
-            Evaluation eval = SearchCore(alpha, beta, depth, move, move_idx);
+            Evaluation eval =
+                SearchCore(alpha, beta, depth, move, move_idx);
+
+            if (time_up)
+                return 0;
 
             if (eval <= alpha)
             {
-                return alpha; // Fail-low / Prune immediately
+                result = eval;
+
+                transposition_table[key] = {
+                    result,
+                    (uint8_t)depth,
+                    TranspositionEntry::UPPER_BOUND
+                };
+
+                return result;
             }
+
             beta = std::min(beta, eval);
         }
 
-        return beta;
+        result = beta;
     }
+
+    // The search completed without a cutoff, so the result is exact.
+    transposition_table[key] = {
+        result,
+        (uint8_t)depth,
+        TranspositionEntry::EXACT
+    };
+
+    return result;
 }
 

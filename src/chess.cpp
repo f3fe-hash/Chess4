@@ -141,6 +141,32 @@ ChessBoard::ChessBoard()
 }
 
 
+ChessBoard::~ChessBoard()
+{}
+
+
+uint64_t ChessBoard::GenerateZobristHash() const
+{
+    uint64_t hash = 0;
+    for (int s = 0; s < 64; ++s)
+    {
+        if (pieces[s] != NULL_PIECE)
+        {
+            hash ^= zobrist_keys.pieces[GetZobristPieceIndex(pieces[s])][s];
+        }
+    }
+
+    hash ^= zobrist_keys.castling[castling_rights];
+
+    if (turn == TURN_BLACK)
+    {
+        hash ^= zobrist_keys.side_to_move;
+    }
+
+    return hash;
+}
+
+
 Piece ChessBoard::GetPieceAt(Square square) const
 {
     if (square < 64)
@@ -234,10 +260,6 @@ bool ChessBoard::LoadFEN(const std::string& fen)
 
     return true;
 }
-
-
-ChessBoard::~ChessBoard()
-{}
 
 
 void ChessBoard::UpdateOccupancyBitboards()
@@ -549,7 +571,7 @@ void ChessBoard::MakeMove(Move& move)
                 move.flags = MOVE_CASTLE_QUEENSIDE;
         }
     }
-    
+
     if ((originalPiece & 0x07) == PIECE_TYPE_PAWN)
     {
         int fromY = get_piece_y(move.from);
@@ -668,6 +690,50 @@ void ChessBoard::MakeMove(Move& move)
             occupancy_bitboard_black &= ~SquareMask(rookFrom);
             occupancy_bitboard_black |= SquareMask(rookTo);
         }
+    }
+
+    // ------------------------------------------------------------
+    // Zobrist: Update zobrist hash value.
+    // ------------------------------------------------------------
+
+    // Toggle the turn modifier
+    zobrist_hash ^= zobrist_keys.side_to_move;
+
+    // Update changed castling rights (only if they actually changed)
+    if (move.prev_castling_rights != castling_rights)
+    {
+        zobrist_hash ^= zobrist_keys.castling[move.prev_castling_rights];
+        zobrist_hash ^= zobrist_keys.castling[castling_rights];
+    }
+
+    // Remove the original moving piece from its starting square
+    zobrist_hash ^= zobrist_keys.pieces[GetZobristPieceIndex(originalPiece)][move.from];
+
+    // Place the FINAL moved piece onto the destination square (Handles Promotion correctly)
+    zobrist_hash ^= zobrist_keys.pieces[GetZobristPieceIndex(movedPiece)][move.to];
+
+    // Remove a captured piece if present
+    if (capturedPiece != NULL_PIECE)
+    {
+        zobrist_hash ^= zobrist_keys.pieces[GetZobristPieceIndex(capturedPiece)][move.to];
+    }
+
+    // Update the Rook's position in the hash.
+    if (move.flags & MOVE_CASTLE_KINGSIDE)
+    {
+        Square rookFrom = movingWhite ? H1 : H8;
+        Square rookTo   = movingWhite ? F1 : F8;
+        Piece rook = pieces[rookTo]; // The rook is already at rookTo now
+        zobrist_hash ^= zobrist_keys.pieces[GetZobristPieceIndex(rook)][rookFrom];
+        zobrist_hash ^= zobrist_keys.pieces[GetZobristPieceIndex(rook)][rookTo];
+    }
+    else if (move.flags & MOVE_CASTLE_QUEENSIDE)
+    {
+        Square rookFrom = movingWhite ? A1 : A8;
+        Square rookTo   = movingWhite ? D1 : D8;
+        Piece rook = pieces[rookTo];
+        zobrist_hash ^= zobrist_keys.pieces[GetZobristPieceIndex(rook)][rookFrom];
+        zobrist_hash ^= zobrist_keys.pieces[GetZobristPieceIndex(rook)][rookTo];
     }
 
     move.moved = movedPiece;
@@ -836,6 +902,25 @@ void ChessBoard::UndoMove(Move move)
                 SquareMask(rookFrom);
         }
     }
+
+    // ------------------------------------------------------------
+    // Zobrist: Update zobrist hash value.
+    // ------------------------------------------------------------
+
+    // Update turn color modifier
+    zobrist_hash ^= zobrist_keys.side_to_move;
+
+    // Update changed castling rights
+    zobrist_hash ^= zobrist_keys.castling[move.prev_castling_rights];
+    zobrist_hash ^= zobrist_keys.castling[castling_rights];
+
+    // Update piece positions
+    zobrist_hash ^= zobrist_keys.pieces[GetZobristPieceIndex(move.moved)][move.from];
+    zobrist_hash ^= zobrist_keys.pieces[GetZobristPieceIndex(move.moved)][move.to];
+
+    // Remove a captured piece if present
+    if (move.captured != NULL_PIECE)
+        zobrist_hash ^= zobrist_keys.pieces[GetZobristPieceIndex(move.captured)][move.to];
 
     // Restore castling rights exactly as they were.
     castling_rights = move.prev_castling_rights;
