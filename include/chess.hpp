@@ -49,8 +49,8 @@ struct Move
 // 64 square bitboard.
 using Bitboard = uint64_t;
 
-#define TURN_WHITE  0
-#define TURN_BLACK  1
+#define TURN_WHITE  1
+#define TURN_BLACK  0
 
 // Chess board turn color
 using TurnColor = bool;
@@ -111,11 +111,20 @@ public:
     uint8_t CountQueens();
     uint8_t CountKings();
 
+    Square PopPawns();
+    Square PopKnights();
+    Square PopBishops();
+    Square PopRooks();
+    Square PopQueens();
+    Square PopKings();
+
     inline bool GetTurnColor()
     { return turn; }
 
     inline void SetTurnColor(bool turn_color)
     { turn = turn_color; }
+
+    Piece GetPieceAt(Square square) const;
 
     // Load board from FEN string. Returns true on success.
     bool LoadFEN(const std::string& fen);

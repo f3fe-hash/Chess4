@@ -5,13 +5,17 @@
 
 #include "chess.hpp"
 
-using Evaluation = int;
+using Evaluation = float;
 
 class ChessBoardEvaluation
 {
     std::shared_ptr<ChessBoard> board;
 
+    Square __fix_pst_square(Square square);
+
     Evaluation EvaluatePieceValues();
+
+    Evaluation EvaluatePSTs();
 
 public:
     ChessBoardEvaluation(std::shared_ptr<ChessBoard> _board);

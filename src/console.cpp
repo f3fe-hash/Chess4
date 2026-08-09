@@ -1,9 +1,37 @@
 #include "console.hpp"
 
+namespace
+{
+char piece_to_char(Piece piece)
+{
+    if (piece == NULL_PIECE)
+        return '.';
+
+    char out = '?';
+    switch (piece & 0x07)
+    {
+        case PIECE_TYPE_PAWN:   out = 'p'; break;
+        case PIECE_TYPE_KNIGHT: out = 'n'; break;
+        case PIECE_TYPE_BISHOP: out = 'b'; break;
+        case PIECE_TYPE_ROOK:   out = 'r'; break;
+        case PIECE_TYPE_QUEEN:  out = 'q'; break;
+        case PIECE_TYPE_KING:   out = 'k'; break;
+        default:               out = '?'; break;
+    }
+
+    if (piece & PIECE_COLOR_WHITE)
+        out = char(out - 'a' + 'A');
+
+    return out;
+}
+}
+
 
 Console::Console(std::shared_ptr<ChessBoard> _board, std::shared_ptr<ChessBot> _bot) :
     board(_board), bot(_bot)
-{}
+{
+    bot->SetTimeLimit(std::chrono::seconds(1));
+}
 
 
 Console::~Console()
@@ -49,16 +77,34 @@ void Console::run()
         {
             board->LoadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         }
+        else if (cmd == "board")
+        {
+            PrintBoard();
+        }
         else if (cmd == "bot")
         {
-            MoveResult move = bot->Search(5);
+            MoveResult move = bot->Search(100);
+            std::cout << "[BOT] Has searched to a depth of " << move.depth
+                << " and has searched  " << move.nodes_searched << " nodes."
+                << std::endl;
+
             std::cout << "[BOT] Has decided to play " << MoveToString(move.move) << std::endl;
+            board->MakeMove(move.move);
             continue;
         }
         else if (cmd == "eval")
         {
-            // TODO: Evaluate position.
-            continue;
+            Evaluation eval = bot->Evaluate();
+            std::cout << "Current position evaluation: " << eval << "." << std::endl;
+        }
+        else if (cmd == "timelimit")
+        {
+            std::string timelimit_str = GetCommand("How long would you like the bot to think (seconds)? ");
+            double timelimit = std::stod(timelimit_str);
+            int timelimit_ms = (int)(timelimit * 1000);
+
+            std::cout << "Set [BOT] time limit to " << timelimit_ms << "ms." << std::endl;
+            bot->SetTimeLimit(DurationMs(timelimit_ms));
         }
         else if (cmd == "exit")
         {
@@ -73,10 +119,10 @@ void Console::run()
 }
 
 
-std::string Console::GetCommand()
+std::string Console::GetCommand(const std::string& prompt)
 {
     std::string buffer;
-    std::cout << ">>> ";
+    std::cout << prompt;
     std::cin >> buffer;
 
     return buffer;
@@ -171,3 +217,26 @@ std::string Console::MoveToString(Move move)
     return std::string(buff);
 }
 
+void Console::PrintBoard()
+{
+    std::cout << (board->GetTurnColor() == TURN_WHITE ? "White to move" : "Black to move") << std::endl;
+    std::cout << "  | a  b  c  d  e  f  g  h |" << std::endl;
+    std::cout << "  +------------------------+" << std::endl;
+
+    for (int8_t y = 7; y >= 0; y--)
+    {
+        printf("%c |", '1' + y);
+
+        for (uint8_t x = 0; x < 8; x++)
+        {
+            uint8_t coord = flatten_xy(x, y);
+            Piece piece = board->GetPieceAt(coord);
+            printf(" %c ", piece_to_char(piece));
+        }
+
+        printf("| %c\n", '1' + y);
+    }
+
+    std::cout << "  +------------------------+" << std::endl;
+    std::cout << "  | a  b  c  d  e  f  g  h |" << std::endl;
+}

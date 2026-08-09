@@ -47,6 +47,14 @@ inline Square PopLeastSignificantBit(Bitboard& bits)
     return sq;
 }
 
+inline Square PopBitboard(Bitboard bits)
+{
+    if (!bits)
+        return Square(65);
+
+    return PopLeastSignificantBit(bits);
+}
+
 inline void AddMove(std::vector<Move>& moves, Square from, Square to, Piece moved, Piece captured)
 {
     Move move;
@@ -91,6 +99,29 @@ Bitboard ComputeSlidingAttacks(Square square, Bitboard occupancy, const int dire
 ChessBoard::ChessBoard()
 {
     ComputeAttackLookupBitboards();
+
+    for (int i = 0; i < 64; ++i)
+        pieces[i] = NULL_PIECE;
+
+    for (int i = 0; i < 32; ++i)
+    {
+        occupancy_bitboards[i] = 0ULL;
+        attack_bitboards[i] = 0ULL;
+    }
+
+    occupancy_bitboard_white = 0ULL;
+    occupancy_bitboard_black = 0ULL;
+    attack_bitboard_white = 0ULL;
+    attack_bitboard_black = 0ULL;
+    turn = TURN_WHITE;
+}
+
+
+Piece ChessBoard::GetPieceAt(Square square) const
+{
+    if (square < 64)
+        return pieces[square];
+    return NULL_PIECE;
 }
 
 
@@ -106,20 +137,23 @@ bool ChessBoard::LoadFEN(const std::string& fen)
     size_t len = fen.size();
 
     // Piece placement
-    int square = 63; // start at a8
+    int rank = 7;
+    int file = 0;
+
     while (idx < len && fen[idx] != ' ')
     {
         char c = fen[idx];
         if (c == '/')
         {
             ++idx;
+            --rank;
+            file = 0;
             continue;
         }
 
         if (c >= '1' && c <= '8')
         {
-            int skip = c - '0';
-            square -= skip;
+            file += c - '0';
             ++idx;
             continue;
         }
@@ -146,9 +180,13 @@ bool ChessBoard::LoadFEN(const std::string& fen)
             else
                 p |= PIECE_COLOR_BLACK;
 
-            if (square >= 0 && square < 64)
+            if (rank >= 0 && rank < 8 && file >= 0 && file < 8)
+            {
+                int square = flatten_xy(file, rank);
                 pieces[square] = p;
-            --square;
+            }
+
+            ++file;
         }
 
         ++idx;
@@ -400,111 +438,103 @@ void ChessBoard::MakeMove(Move& move)
     
     if (move.captured == NULL_PIECE)
         move.captured = pieces[move.to];
-    
+
+    Piece movedPiece = move.moved;
+    Piece capturedPiece = move.captured;
+
     // Promotion
-    if (turn == TURN_WHITE)
+    if ((movedPiece & 0x07) == PIECE_TYPE_PAWN)
     {
-        if ((move.moved == PIECE_TYPE_PAWN) && (get_piece_y(move.from) == 7))
+        int fromY = get_piece_y(move.from);
+        int toY = get_piece_y(move.to);
+        if ((turn == TURN_WHITE && fromY == 6 && toY == 7) ||
+            (turn == TURN_BLACK && fromY == 1 && toY == 0))
         {
-            // 8th rank. Promotion.
             move.flags &= ~0x07;
-            move.flags |= PIECE_TYPE_PAWN; // PIECE_TYPE_QUEEN
-            move.moved = PIECE_TYPE_PAWN | PIECE_COLOR_WHITE;  //
-        }
-    }
-    else
-    {
-        if ((move.moved == PIECE_TYPE_PAWN) && (get_piece_y(move.from) == 1))
-        {
-            // 1st rank. Promotion.
-            move.flags &= ~0x07;
-            move.flags |= PIECE_TYPE_PAWN; // PIECE_TYPE_QUEEN
-            move.moved = PIECE_TYPE_PAWN | PIECE_COLOR_BLACK;  //
+            move.flags |= PIECE_TYPE_QUEEN;
+            movedPiece = PIECE_TYPE_QUEEN | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK);
         }
     }
 
     pieces[move.from] = NULL_PIECE;
-    pieces[move.to] = move.moved;
+    pieces[move.to] = movedPiece;
 
-    // Move the piece on the white and black bitboards.
-    if (turn == TURN_WHITE)
+    Bitboard fromMask = SquareMask(move.from);
+    Bitboard toMask = SquareMask(move.to);
+    bool movingWhite = (turn == TURN_WHITE);
+
+    if (movingWhite)
     {
-        occupancy_bitboard_white ^= move.from;
-        occupancy_bitboard_black |= move.to;
+        occupancy_bitboard_white &= ~fromMask;
+        occupancy_bitboard_white |= toMask;
+        if (capturedPiece != NULL_PIECE)
+            occupancy_bitboard_black &= ~toMask;
     }
-    else // Black
+    else
     {
-        occupancy_bitboard_black ^= move.from;
-        occupancy_bitboard_white |= move.to;
+        occupancy_bitboard_black &= ~fromMask;
+        occupancy_bitboard_black |= toMask;
+        if (capturedPiece != NULL_PIECE)
+            occupancy_bitboard_white &= ~toMask;
     }
 
-    // Move the piece on it's own bitboard.
-    occupancy_bitboards[move.moved] ^= move.from;
-    occupancy_bitboards[move.moved] |= move.to;
+    occupancy_bitboards[movedPiece] &= ~fromMask;
+    occupancy_bitboards[movedPiece] |= toMask;
 
-    // Remove the piece on the captured bitboard (if there is a piece there).
-    if (move.captured)
-        occupancy_bitboards[move.captured] ^= move.to;
-    
-    if (move.moved & 0x07)
-    {
-        move.moved &= ~0x07;
-        move.moved |= PIECE_TYPE_PAWN;
-    }
-    
+    if (capturedPiece != NULL_PIECE)
+        occupancy_bitboards[capturedPiece] &= ~toMask;
+
+    move.moved = movedPiece;
+    move.captured = capturedPiece;
+
     turn ^= 1;
 
     UpdateAttackBitboards();
-
-    return;
 }
 
 
 void ChessBoard::UndoMove(Move move)
 {
-    // move.captured and move.moved are already set by MakeMove.
+    bool movingWhite = (turn == TURN_BLACK);
+    Piece movedPiece = move.moved;
+    Piece restoredPiece = movedPiece;
+    Piece pawnPiece = PIECE_TYPE_PAWN | (movingWhite ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK);
 
-    // Check for promotion flags.
     if (move.flags & 0x07)
     {
-        move.moved &= ~0x07;
-        move.moved |= PIECE_TYPE_PAWN; // PIECE_TYPE_QUEEN
+        restoredPiece = pawnPiece;
     }
 
-    pieces[move.from] = move.moved;
+    pieces[move.from] = restoredPiece;
     pieces[move.to] = move.captured;
 
-    // Move the piece on the white and black bitboards.
-    if (turn == TURN_WHITE)
+    Bitboard fromMask = SquareMask(move.from);
+    Bitboard toMask = SquareMask(move.to);
+
+    if (movingWhite)
     {
-        occupancy_bitboard_white |= move.from;
-        occupancy_bitboard_black ^= move.to;
+        occupancy_bitboard_white |= fromMask;
+        occupancy_bitboard_white &= ~toMask;
+        if (move.captured != NULL_PIECE)
+            occupancy_bitboard_black |= toMask;
     }
-    else // Black
+    else
     {
-        occupancy_bitboard_black |= move.from;
-        occupancy_bitboard_white ^= move.to;
+        occupancy_bitboard_black |= fromMask;
+        occupancy_bitboard_black &= ~toMask;
+        if (move.captured != NULL_PIECE)
+            occupancy_bitboard_white |= toMask;
     }
 
-    // Move the piece on it's own bitboard.
-    occupancy_bitboards[move.moved] ^= move.from;
-    occupancy_bitboards[move.moved] |= move.to;
+    occupancy_bitboards[movedPiece] &= ~toMask;
+    occupancy_bitboards[restoredPiece] |= fromMask;
 
-    // Remove the piece on the captured bitboard (if there is a piece there).
-    if (move.captured)
-        occupancy_bitboards[move.captured] ^= move.to;
-    
-    if (move.moved & 0x07)
-    {
-        move.moved &= ~0x07;
-        move.moved |= PIECE_TYPE_PAWN;
-    }
+    if (move.captured != NULL_PIECE)
+        occupancy_bitboards[move.captured] |= toMask;
 
     turn ^= 1;
 
     UpdateAttackBitboards();
-    
-    return;
 }
 
 
@@ -806,17 +836,17 @@ std::vector<Move> ChessBoard::GetLegalMoves()
     GetLegalQueenMoves(moves);
     GetLegalKingMoves(moves);
     
-    std::vector<Move> legal_moves(moves.size() >> 1);
+    std::vector<Move> legal_moves;
+    legal_moves.reserve(moves.size());
+
     for (Move move : moves)
     {
         MakeMove(move);
-
-        if (IsCheck())
-        {
-            continue;
-        }
-
+        bool in_check = IsCheck();
         UndoMove(move);
+
+        if (in_check)
+            continue;
 
         legal_moves.push_back(move);
     }
@@ -831,7 +861,7 @@ bool ChessBoard::IsLegalMove(Move move)
 
     for (Move move_ : moves)
     {
-        if ((move.from == move_.from) && (move.to && move_.to))
+        if ((move.from == move_.from) && (move.to == move_.to))
             return true;
     }
 
@@ -982,5 +1012,65 @@ uint8_t ChessBoard::CountKings()
         ++count;
     }
     return count;
+}
+
+
+Square ChessBoard::PopPawns()
+{
+    Bitboard pawns = occupancy_bitboards[
+        PIECE_TYPE_PAWN | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+
+    return PopBitboard(pawns);
+}
+
+
+Square ChessBoard::PopKnights()
+{
+    Bitboard knights = occupancy_bitboards[
+        PIECE_TYPE_KNIGHT | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+
+    return PopBitboard(knights);
+}
+
+
+Square ChessBoard::PopBishops()
+{
+    Bitboard bishops = occupancy_bitboards[
+        PIECE_TYPE_BISHOP | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+
+    return PopBitboard(bishops);
+}
+
+
+Square ChessBoard::PopRooks()
+{
+    Bitboard rooks = occupancy_bitboards[
+        PIECE_TYPE_ROOK | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+
+    return PopBitboard(rooks);
+}
+
+
+Square ChessBoard::PopQueens()
+{
+    Bitboard queens = occupancy_bitboards[
+        PIECE_TYPE_QUEEN | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+
+    return PopBitboard(queens);
+}
+
+
+Square ChessBoard::PopKings()
+{
+    Bitboard kings = occupancy_bitboards[
+        PIECE_TYPE_KING | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+
+    return PopBitboard(kings);
 }
 
