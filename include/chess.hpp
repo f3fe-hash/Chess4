@@ -85,6 +85,7 @@ class ChessBoard
     void GetLegalPawnMoves(std::vector<Move>& moves);
     void GetLegalKnightMoves(std::vector<Move>& moves);
     void GetLegalBishopMoves(std::vector<Move>& moves);
+    void GetLegalRookMoves(std::vector<Move>& moves);
     void GetLegalQueenMoves(std::vector<Move>& moves);
     void GetLegalKingMoves(std::vector<Move>& moves);
     

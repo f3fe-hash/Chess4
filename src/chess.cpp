@@ -777,6 +777,34 @@ void ChessBoard::GetLegalBishopMoves(std::vector<Move>& moves)
 }
 
 
+void ChessBoard::GetLegalRookMoves(std::vector<Move>& moves)
+{
+    
+    Bitboard occupancy = occupancy_bitboard_white | occupancy_bitboard_black;
+    Bitboard friendlyOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_white : occupancy_bitboard_black;
+
+    static const int rookDirs[4][2] = {
+        {1, 0}, {-1, 0}, {0, 1}, {0, -1}
+    };
+
+    Bitboard rooks = occupancy_bitboards[
+        PIECE_TYPE_ROOK | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+
+    while (rooks)
+    {
+        Square square = PopLeastSignificantBit(rooks);
+        Piece piece = pieces[square];
+        Bitboard targets = ComputeSlidingAttacks(square, occupancy, rookDirs, 4) & ~friendlyOccupancy;
+        while (targets)
+        {
+            Square to = PopLeastSignificantBit(targets);
+            AddMove(moves, square, to, piece, pieces[to]);
+        }
+    }
+}
+
+
 void ChessBoard::GetLegalQueenMoves(std::vector<Move>& moves)
 {
     
@@ -807,17 +835,31 @@ void ChessBoard::GetLegalQueenMoves(std::vector<Move>& moves)
 
 void ChessBoard::GetLegalKingMoves(std::vector<Move>& moves)
 {
-    
-    Bitboard friendlyOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_white : occupancy_bitboard_black;
+    Bitboard friendlyOccupancy =
+        (turn == TURN_WHITE)
+            ? occupancy_bitboard_white
+            : occupancy_bitboard_black;
+
+    Bitboard enemyAttacks =
+        (turn == TURN_WHITE)
+            ? attack_bitboard_black
+            : attack_bitboard_white;
+
     Bitboard kings = occupancy_bitboards[
-        PIECE_TYPE_KING | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+        PIECE_TYPE_KING |
+        (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
     ];
 
     while (kings)
     {
         Square square = PopLeastSignificantBit(kings);
         Piece piece = pieces[square];
-        Bitboard targets = king_attack_lookup[square] & ~friendlyOccupancy;
+
+        Bitboard targets =
+            king_attack_lookup[square] &
+            ~friendlyOccupancy &
+            ~enemyAttacks;
+
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
@@ -833,6 +875,7 @@ std::vector<Move> ChessBoard::GetLegalMoves()
     GetLegalPawnMoves(moves);
     GetLegalKnightMoves(moves);
     GetLegalBishopMoves(moves);
+    GetLegalRookMoves(moves);
     GetLegalQueenMoves(moves);
     GetLegalKingMoves(moves);
     
