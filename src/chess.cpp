@@ -55,14 +55,23 @@ inline Square PopBitboard(Bitboard bits)
     return PopLeastSignificantBit(bits);
 }
 
-inline void AddMove(std::vector<Move>& moves, Square from, Square to, Piece moved, Piece captured)
+inline void AddMove(
+    std::vector<Move>& moves,
+    Square from,
+    Square to,
+    Piece moved,
+    Piece captured,
+    CastlingRights castlingRights)
 {
     Move move;
+
     move.from = from;
     move.to = to;
     move.moved = moved;
     move.captured = captured;
-    move.flags = 0;
+    move.flags = MOVE_NORMAL;
+    move.prev_castling_rights = castlingRights;
+
     moves.push_back(move);
 }
 
@@ -94,6 +103,18 @@ Bitboard ComputeSlidingAttacks(Square square, Bitboard occupancy, const int dire
     return attacks;
 }
 
+constexpr Bitboard WHITE_KINGSIDE_EMPTY  =
+    (1ULL << 5) | (1ULL << 6); // f1 | g1
+
+constexpr Bitboard WHITE_QUEENSIDE_EMPTY =
+    (1ULL << 1) | (1ULL << 2) | (1ULL << 3); // b1 | c1 | d1
+
+constexpr Bitboard BLACK_KINGSIDE_EMPTY  =
+    (1ULL << 61) | (1ULL << 62); // f8 | g8
+
+constexpr Bitboard BLACK_QUEENSIDE_EMPTY =
+    (1ULL << 57) | (1ULL << 58) | (1ULL << 59); // b8 | c8 | d8
+
 }
 
 ChessBoard::ChessBoard()
@@ -114,6 +135,9 @@ ChessBoard::ChessBoard()
     attack_bitboard_white = 0ULL;
     attack_bitboard_black = 0ULL;
     turn = TURN_WHITE;
+
+    castling_rights = CastlingRights(CASTLE_WK | CASTLE_WQ |
+                  CASTLE_BK | CASTLE_BQ);
 }
 
 
@@ -433,56 +457,218 @@ void ChessBoard::ComputeAttackLookupBitboards()
 
 void ChessBoard::MakeMove(Move& move)
 {
+    bool movingWhite = (turn == TURN_WHITE);
+
     if (move.moved == NULL_PIECE)
         move.moved = pieces[move.from];
-    
+
     if (move.captured == NULL_PIECE)
         move.captured = pieces[move.to];
 
-    Piece movedPiece = move.moved;
+    move.prev_castling_rights = castling_rights;
+
+    Piece originalPiece = move.moved;
+    Piece movedPiece = originalPiece;
     Piece capturedPiece = move.captured;
 
-    // Promotion
-    if ((movedPiece & 0x07) == PIECE_TYPE_PAWN)
+    // ------------------------------------------------------------
+    // Update castling rights before modifying the board.
+    // ------------------------------------------------------------
+
+    if ((originalPiece & 0x07) == PIECE_TYPE_KING)
+    {
+        if (movingWhite)
+            castling_rights =
+                CastlingRights(castling_rights &
+                ~(CASTLE_WK | CASTLE_WQ));
+        else
+            castling_rights =
+                CastlingRights(castling_rights &
+                ~(CASTLE_BK | CASTLE_BQ));
+    }
+
+    if ((originalPiece & 0x07) == PIECE_TYPE_ROOK)
+    {
+        if (move.from == H1)
+            castling_rights =
+                CastlingRights(castling_rights & ~CASTLE_WK);
+
+        else if (move.from == A1)
+            castling_rights =
+                CastlingRights(castling_rights & ~CASTLE_WQ);
+
+        else if (move.from == H8)
+            castling_rights =
+                CastlingRights(castling_rights & ~CASTLE_BK);
+
+        else if (move.from == A8)
+            castling_rights =
+                CastlingRights(castling_rights & ~CASTLE_BQ);
+    }
+
+    // A rook being captured also removes its castling right.
+    if ((capturedPiece & 0x07) == PIECE_TYPE_ROOK)
+    {
+        if (move.to == H1)
+            castling_rights =
+                CastlingRights(castling_rights & ~CASTLE_WK);
+
+        else if (move.to == A1)
+            castling_rights =
+                CastlingRights(castling_rights & ~CASTLE_WQ);
+
+        else if (move.to == H8)
+            castling_rights =
+                CastlingRights(castling_rights & ~CASTLE_BK);
+
+        else if (move.to == A8)
+            castling_rights =
+                CastlingRights(castling_rights & ~CASTLE_BQ);
+    }
+
+    // ------------------------------------------------------------
+    // Flag updates
+    // ------------------------------------------------------------
+
+    move.flags = MOVE_NORMAL;
+
+    if ((originalPiece & 0x07) == PIECE_TYPE_KING)
+    {
+        if (movingWhite)
+        {
+            if (move.from == E1 && move.to == G1)
+                move.flags = MOVE_CASTLE_KINGSIDE;
+            else if (move.from == E1 && move.to == C1)
+                move.flags = MOVE_CASTLE_QUEENSIDE;
+        }
+        else
+        {
+            if (move.from == E8 && move.to == G8)
+                move.flags = MOVE_CASTLE_KINGSIDE;
+            else if (move.from == E8 && move.to == C8)
+                move.flags = MOVE_CASTLE_QUEENSIDE;
+        }
+    }
+    
+    if ((originalPiece & 0x07) == PIECE_TYPE_PAWN)
     {
         int fromY = get_piece_y(move.from);
         int toY = get_piece_y(move.to);
-        if ((turn == TURN_WHITE && fromY == 6 && toY == 7) ||
-            (turn == TURN_BLACK && fromY == 1 && toY == 0))
+
+        if ((movingWhite && fromY == 6 && toY == 7) ||
+            (!movingWhite && fromY == 1 && toY == 0))
         {
-            move.flags &= ~0x07;
-            move.flags |= PIECE_TYPE_QUEEN;
-            movedPiece = PIECE_TYPE_QUEEN | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK);
+            move.flags = MOVE_PROMOTION;
+
+            movedPiece =
+                PIECE_TYPE_QUEEN |
+                (movingWhite
+                    ? PIECE_COLOR_WHITE
+                    : PIECE_COLOR_BLACK);
         }
     }
 
-    pieces[move.from] = NULL_PIECE;
-    pieces[move.to] = movedPiece;
+    // ------------------------------------------------------------
+    // Remove original piece from its old square.
+    // ------------------------------------------------------------
 
-    Bitboard fromMask = SquareMask(move.from);
-    Bitboard toMask = SquareMask(move.to);
-    bool movingWhite = (turn == TURN_WHITE);
+    pieces[move.from] = NULL_PIECE;
+
+    occupancy_bitboards[originalPiece] &=
+        ~SquareMask(move.from);
 
     if (movingWhite)
-    {
-        occupancy_bitboard_white &= ~fromMask;
-        occupancy_bitboard_white |= toMask;
-        if (capturedPiece != NULL_PIECE)
-            occupancy_bitboard_black &= ~toMask;
-    }
+        occupancy_bitboard_white &=
+            ~SquareMask(move.from);
     else
-    {
-        occupancy_bitboard_black &= ~fromMask;
-        occupancy_bitboard_black |= toMask;
-        if (capturedPiece != NULL_PIECE)
-            occupancy_bitboard_white &= ~toMask;
-    }
+        occupancy_bitboard_black &=
+            ~SquareMask(move.from);
 
-    occupancy_bitboards[movedPiece] &= ~fromMask;
-    occupancy_bitboards[movedPiece] |= toMask;
+    // ------------------------------------------------------------
+    // Remove captured piece.
+    // ------------------------------------------------------------
 
     if (capturedPiece != NULL_PIECE)
-        occupancy_bitboards[capturedPiece] &= ~toMask;
+    {
+        occupancy_bitboards[capturedPiece] &=
+            ~SquareMask(move.to);
+
+        if (capturedPiece & PIECE_COLOR_WHITE)
+            occupancy_bitboard_white &=
+                ~SquareMask(move.to);
+        else
+            occupancy_bitboard_black &=
+                ~SquareMask(move.to);
+    }
+
+    // ------------------------------------------------------------
+    // Put moved piece on destination.
+    // ------------------------------------------------------------
+
+    pieces[move.to] = movedPiece;
+
+    occupancy_bitboards[movedPiece] |=
+        SquareMask(move.to);
+
+    if (movingWhite)
+        occupancy_bitboard_white |=
+            SquareMask(move.to);
+    else
+        occupancy_bitboard_black |=
+            SquareMask(move.to);
+
+    // ------------------------------------------------------------
+    // Castling: move the rook.
+    // ------------------------------------------------------------
+
+    if (move.flags & MOVE_CASTLE_KINGSIDE)
+    {
+        Square rookFrom = movingWhite ? H1 : H8;
+        Square rookTo   = movingWhite ? F1 : F8;
+
+        Piece rook = pieces[rookFrom];
+
+        pieces[rookFrom] = NULL_PIECE;
+        pieces[rookTo] = rook;
+
+        occupancy_bitboards[rook] &= ~SquareMask(rookFrom);
+        occupancy_bitboards[rook] |= SquareMask(rookTo);
+
+        if (movingWhite)
+        {
+            occupancy_bitboard_white &= ~SquareMask(rookFrom);
+            occupancy_bitboard_white |= SquareMask(rookTo);
+        }
+        else
+        {
+            occupancy_bitboard_black &= ~SquareMask(rookFrom);
+            occupancy_bitboard_black |= SquareMask(rookTo);
+        }
+    }
+    else if (move.flags & MOVE_CASTLE_QUEENSIDE)
+    {
+        Square rookFrom = movingWhite ? A1 : A8;
+        Square rookTo   = movingWhite ? D1 : D8;
+
+        Piece rook = pieces[rookFrom];
+
+        pieces[rookFrom] = NULL_PIECE;
+        pieces[rookTo] = rook;
+
+        occupancy_bitboards[rook] &= ~SquareMask(rookFrom);
+        occupancy_bitboards[rook] |= SquareMask(rookTo);
+
+        if (movingWhite)
+        {
+            occupancy_bitboard_white &= ~SquareMask(rookFrom);
+            occupancy_bitboard_white |= SquareMask(rookTo);
+        }
+        else
+        {
+            occupancy_bitboard_black &= ~SquareMask(rookFrom);
+            occupancy_bitboard_black |= SquareMask(rookTo);
+        }
+    }
 
     move.moved = movedPiece;
     move.captured = capturedPiece;
@@ -496,41 +682,163 @@ void ChessBoard::MakeMove(Move& move)
 void ChessBoard::UndoMove(Move move)
 {
     bool movingWhite = (turn == TURN_BLACK);
-    Piece movedPiece = move.moved;
-    Piece restoredPiece = movedPiece;
-    Piece pawnPiece = PIECE_TYPE_PAWN | (movingWhite ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK);
 
-    if (move.flags & 0x07)
+    Piece movedPiece = move.moved;
+
+    // If the move was a promotion, restore a pawn.
+    Piece restoredPiece = movedPiece;
+
+    if (move.flags & MOVE_PROMOTION)
     {
-        restoredPiece = pawnPiece;
+        restoredPiece =
+            PIECE_TYPE_PAWN |
+            (movingWhite
+                ? PIECE_COLOR_WHITE
+                : PIECE_COLOR_BLACK);
     }
 
-    pieces[move.from] = restoredPiece;
-    pieces[move.to] = move.captured;
+    // ------------------------------------------------------------
+    // Remove moved piece from destination.
+    // ------------------------------------------------------------
 
-    Bitboard fromMask = SquareMask(move.from);
-    Bitboard toMask = SquareMask(move.to);
+    pieces[move.to] = NULL_PIECE;
+
+    occupancy_bitboards[movedPiece] &=
+        ~SquareMask(move.to);
 
     if (movingWhite)
-    {
-        occupancy_bitboard_white |= fromMask;
-        occupancy_bitboard_white &= ~toMask;
-        if (move.captured != NULL_PIECE)
-            occupancy_bitboard_black |= toMask;
-    }
+        occupancy_bitboard_white &=
+            ~SquareMask(move.to);
     else
-    {
-        occupancy_bitboard_black |= fromMask;
-        occupancy_bitboard_black &= ~toMask;
-        if (move.captured != NULL_PIECE)
-            occupancy_bitboard_white |= toMask;
-    }
+        occupancy_bitboard_black &=
+            ~SquareMask(move.to);
 
-    occupancy_bitboards[movedPiece] &= ~toMask;
-    occupancy_bitboards[restoredPiece] |= fromMask;
+    // ------------------------------------------------------------
+    // Restore captured piece.
+    // ------------------------------------------------------------
 
     if (move.captured != NULL_PIECE)
-        occupancy_bitboards[move.captured] |= toMask;
+    {
+        pieces[move.to] = move.captured;
+
+        occupancy_bitboards[move.captured] |=
+            SquareMask(move.to);
+
+        if (move.captured & PIECE_COLOR_WHITE)
+            occupancy_bitboard_white |=
+                SquareMask(move.to);
+        else
+            occupancy_bitboard_black |=
+                SquareMask(move.to);
+    }
+
+    // ------------------------------------------------------------
+    // Restore original piece.
+    // ------------------------------------------------------------
+
+    pieces[move.from] = restoredPiece;
+
+    occupancy_bitboards[restoredPiece] |=
+        SquareMask(move.from);
+
+    if (movingWhite)
+        occupancy_bitboard_white |=
+            SquareMask(move.from);
+    else
+        occupancy_bitboard_black |=
+            SquareMask(move.from);
+
+    // ------------------------------------------------------------
+    // Undo castling rook movement.
+    // ------------------------------------------------------------
+
+    if (move.flags & MOVE_CASTLE_KINGSIDE)
+    {
+        Square rookFrom;
+        Square rookTo;
+
+        if (movingWhite)
+        {
+            rookFrom = H1;
+            rookTo = F1;
+        }
+        else
+        {
+            rookFrom = H8;
+            rookTo = F8;
+        }
+
+        Piece rook = pieces[rookTo];
+
+        pieces[rookTo] = NULL_PIECE;
+        pieces[rookFrom] = rook;
+
+        occupancy_bitboards[rook] &=
+            ~SquareMask(rookTo);
+
+        occupancy_bitboards[rook] |=
+            SquareMask(rookFrom);
+
+        if (movingWhite)
+        {
+            occupancy_bitboard_white &=
+                ~SquareMask(rookTo);
+            occupancy_bitboard_white |=
+                SquareMask(rookFrom);
+        }
+        else
+        {
+            occupancy_bitboard_black &=
+                ~SquareMask(rookTo);
+            occupancy_bitboard_black |=
+                SquareMask(rookFrom);
+        }
+    }
+    else if (move.flags & MOVE_CASTLE_QUEENSIDE)
+    {
+        Square rookFrom;
+        Square rookTo;
+
+        if (movingWhite)
+        {
+            rookFrom = A1;
+            rookTo = D1;
+        }
+        else
+        {
+            rookFrom = A8;
+            rookTo = D8;
+        }
+
+        Piece rook = pieces[rookTo];
+
+        pieces[rookTo] = NULL_PIECE;
+        pieces[rookFrom] = rook;
+
+        occupancy_bitboards[rook] &=
+            ~SquareMask(rookTo);
+
+        occupancy_bitboards[rook] |=
+            SquareMask(rookFrom);
+
+        if (movingWhite)
+        {
+            occupancy_bitboard_white &=
+                ~SquareMask(rookTo);
+            occupancy_bitboard_white |=
+                SquareMask(rookFrom);
+        }
+        else
+        {
+            occupancy_bitboard_black &=
+                ~SquareMask(rookTo);
+            occupancy_bitboard_black |=
+                SquareMask(rookFrom);
+        }
+    }
+
+    // Restore castling rights exactly as they were.
+    castling_rights = move.prev_castling_rights;
 
     turn ^= 1;
 
@@ -566,7 +874,7 @@ void ChessBoard::GetLegalPawnAttacks(std::vector<Move>& moves)
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
-            AddMove(moves, square, to, piece, pieces[to]);
+            AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
 }
@@ -588,7 +896,7 @@ void ChessBoard::GetLegalKnightAttacks(std::vector<Move>& moves)
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
-            AddMove(moves, square, to, piece, pieces[to]);
+            AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
 }
@@ -616,7 +924,7 @@ void ChessBoard::GetLegalBishopAttacks(std::vector<Move>& moves)
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
-            AddMove(moves, square, to, piece, pieces[to]);
+            AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
 }
@@ -644,7 +952,7 @@ void ChessBoard::GetLegalQueenAttacks(std::vector<Move>& moves)
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
-            AddMove(moves, square, to, piece, pieces[to]);
+            AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
 }
@@ -666,9 +974,164 @@ void ChessBoard::GetLegalKingAttacks(std::vector<Move>& moves)
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
-            AddMove(moves, square, to, piece, pieces[to]);
+            AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
+}
+
+
+bool ChessBoard::IsSquareAttacked(Square square, TurnColor byColor)
+{
+    //Bitboard occupancy =
+    //    occupancy_bitboard_white |
+    //    occupancy_bitboard_black;
+
+    //Bitboard attackers;
+
+    // Pawns
+    Bitboard pawns = occupancy_bitboards[
+        PIECE_TYPE_PAWN |
+        (byColor == TURN_WHITE
+            ? PIECE_COLOR_WHITE
+            : PIECE_COLOR_BLACK)
+    ];
+
+    while (pawns)
+    {
+        Square pawnSquare = PopLeastSignificantBit(pawns);
+
+        int pawnIndex = (byColor == TURN_WHITE) ? 0 : 1;
+
+        if (pawn_attack_lookup[pawnIndex][pawnSquare] &
+            SquareMask(square))
+        {
+            return true;
+        }
+    }
+
+    // Knights
+    Bitboard knights = occupancy_bitboards[
+        PIECE_TYPE_KNIGHT |
+        (byColor == TURN_WHITE
+            ? PIECE_COLOR_WHITE
+            : PIECE_COLOR_BLACK)
+    ];
+
+    while (knights)
+    {
+        Square knightSquare = PopLeastSignificantBit(knights);
+
+        if (knight_attack_lookup[knightSquare] &
+            SquareMask(square))
+        {
+            return true;
+        }
+    }
+
+    // Kings
+    Bitboard kings = occupancy_bitboards[
+        PIECE_TYPE_KING |
+        (byColor == TURN_WHITE
+            ? PIECE_COLOR_WHITE
+            : PIECE_COLOR_BLACK)
+    ];
+
+    while (kings)
+    {
+        Square kingSquare = PopLeastSignificantBit(kings);
+
+        if (king_attack_lookup[kingSquare] &
+            SquareMask(square))
+        {
+            return true;
+        }
+    }
+
+    // Sliding pieces
+    static const int bishopDirs[4][2] =
+    {
+        { 1,  1},
+        { 1, -1},
+        {-1,  1},
+        {-1, -1}
+    };
+
+    static const int rookDirs[4][2] =
+    {
+        { 1,  0},
+        {-1,  0},
+        { 0,  1},
+        { 0, -1}
+    };
+
+    int x = get_piece_x(square);
+    int y = get_piece_y(square);
+
+    // Bishops / Queens
+    for (int i = 0; i < 4; ++i)
+    {
+        int cx = x + bishopDirs[i][0];
+        int cy = y + bishopDirs[i][1];
+
+        while (IsOnBoard(cx, cy))
+        {
+            Square target = FlattenSquare(cx, cy);
+            Piece piece = pieces[target];
+
+            if (piece != NULL_PIECE)
+            {
+                if (PieceIsFriendly(piece, byColor))
+                {
+                    Piece type = Piece(piece & 0x07);
+
+                    if (type == PIECE_TYPE_BISHOP ||
+                        type == PIECE_TYPE_QUEEN)
+                    {
+                        return true;
+                    }
+                }
+
+                break;
+            }
+
+            cx += bishopDirs[i][0];
+            cy += bishopDirs[i][1];
+        }
+    }
+
+    // Rooks / Queens
+    for (int i = 0; i < 4; ++i)
+    {
+        int cx = x + rookDirs[i][0];
+        int cy = y + rookDirs[i][1];
+
+        while (IsOnBoard(cx, cy))
+        {
+            Square target = FlattenSquare(cx, cy);
+            Piece piece = pieces[target];
+
+            if (piece != NULL_PIECE)
+            {
+                if (PieceIsFriendly(piece, byColor))
+                {
+                    Piece type = Piece(piece & 0x07);
+
+                    if (type == PIECE_TYPE_ROOK ||
+                        type == PIECE_TYPE_QUEEN)
+                    {
+                        return true;
+                    }
+                }
+
+                break;
+            }
+
+            cx += rookDirs[i][0];
+            cy += rookDirs[i][1];
+        }
+    }
+
+    return false;
 }
 
 
@@ -701,7 +1164,7 @@ void ChessBoard::GetLegalPawnMoves(std::vector<Move>& moves)
         Bitboard singleMask = SquareMask(singleTarget);
         if (!(occupancy & singleMask))
         {
-            AddMove(moves, square, singleTarget, piece, pieces[singleTarget]);
+            AddMove(moves, square, singleTarget, piece, pieces[singleTarget], CASTLE_NONE);
 
             if (y == startRank)
             {
@@ -711,7 +1174,7 @@ void ChessBoard::GetLegalPawnMoves(std::vector<Move>& moves)
                     Square doubleTarget = FlattenSquare(x, doubleTargetY);
                     Bitboard doubleMask = SquareMask(doubleTarget);
                     if (!(occupancy & doubleMask))
-                        AddMove(moves, square, doubleTarget, piece, pieces[doubleTarget]);
+                        AddMove(moves, square, doubleTarget, piece, pieces[doubleTarget], CASTLE_NONE);
                 }
             }
         }
@@ -721,7 +1184,7 @@ void ChessBoard::GetLegalPawnMoves(std::vector<Move>& moves)
         {
             Square to = PopLeastSignificantBit(captureTargets);
             if (occupancy & SquareMask(to))
-                AddMove(moves, square, to, piece, pieces[to]);
+                AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
 }
@@ -743,7 +1206,7 @@ void ChessBoard::GetLegalKnightMoves(std::vector<Move>& moves)
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
-            AddMove(moves, square, to, piece, pieces[to]);
+            AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
 }
@@ -771,7 +1234,7 @@ void ChessBoard::GetLegalBishopMoves(std::vector<Move>& moves)
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
-            AddMove(moves, square, to, piece, pieces[to]);
+            AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
 }
@@ -799,7 +1262,7 @@ void ChessBoard::GetLegalRookMoves(std::vector<Move>& moves)
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
-            AddMove(moves, square, to, piece, pieces[to]);
+            AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
 }
@@ -827,7 +1290,7 @@ void ChessBoard::GetLegalQueenMoves(std::vector<Move>& moves)
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
-            AddMove(moves, square, to, piece, pieces[to]);
+            AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
 }
@@ -840,14 +1303,11 @@ void ChessBoard::GetLegalKingMoves(std::vector<Move>& moves)
             ? occupancy_bitboard_white
             : occupancy_bitboard_black;
 
-    Bitboard enemyAttacks =
-        (turn == TURN_WHITE)
-            ? attack_bitboard_black
-            : attack_bitboard_white;
-
     Bitboard kings = occupancy_bitboards[
         PIECE_TYPE_KING |
-        (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+        (turn == TURN_WHITE
+            ? PIECE_COLOR_WHITE
+            : PIECE_COLOR_BLACK)
     ];
 
     while (kings)
@@ -857,13 +1317,129 @@ void ChessBoard::GetLegalKingMoves(std::vector<Move>& moves)
 
         Bitboard targets =
             king_attack_lookup[square] &
-            ~friendlyOccupancy &
-            ~enemyAttacks;
+            ~friendlyOccupancy;
 
         while (targets)
         {
             Square to = PopLeastSignificantBit(targets);
-            AddMove(moves, square, to, piece, pieces[to]);
+
+            AddMove(
+                moves,
+                square,
+                to,
+                piece,
+                pieces[to],
+                CASTLE_NONE
+            );
+        }
+
+        AddCastlingMoves(moves, square, piece);
+    }
+}
+
+
+void ChessBoard::AddCastlingMoves(
+    std::vector<Move>& moves,
+    Square kingSquare,
+    Piece king)
+{
+    if (turn == TURN_WHITE && kingSquare == E1)
+    {
+        // White kingside: e1 -> g1
+        if (castling_rights & CASTLE_WK)
+        {
+            if (pieces[F1] == NULL_PIECE &&
+                pieces[G1] == NULL_PIECE &&
+                pieces[H1] ==
+                    (PIECE_COLOR_WHITE | PIECE_TYPE_ROOK) &&
+                !IsSquareAttacked(E1, TURN_BLACK) &&
+                !IsSquareAttacked(F1, TURN_BLACK) &&
+                !IsSquareAttacked(G1, TURN_BLACK))
+            {
+                Move move;
+                move.from = E1;
+                move.to = G1;
+                move.moved = king;
+                move.captured = NULL_PIECE;
+                move.flags = MOVE_CASTLE_KINGSIDE;
+                move.prev_castling_rights = castling_rights;
+
+                moves.push_back(move);
+            }
+        }
+
+        // White queenside: e1 -> c1
+        if (castling_rights & CASTLE_WQ)
+        {
+            if (pieces[D1] == NULL_PIECE &&
+                pieces[C1] == NULL_PIECE &&
+                pieces[B1] == NULL_PIECE &&
+                pieces[A1] ==
+                    (PIECE_COLOR_WHITE | PIECE_TYPE_ROOK) &&
+                !IsSquareAttacked(E1, TURN_BLACK) &&
+                !IsSquareAttacked(D1, TURN_BLACK) &&
+                !IsSquareAttacked(C1, TURN_BLACK))
+            {
+                Move move;
+                move.from = E1;
+                move.to = C1;
+                move.moved = king;
+                move.captured = NULL_PIECE;
+                move.flags = MOVE_CASTLE_QUEENSIDE;
+                move.prev_castling_rights = castling_rights;
+
+                moves.push_back(move);
+            }
+        }
+    }
+
+    if (turn == TURN_BLACK && kingSquare == E8)
+    {
+        // Black kingside: e8 -> g8
+        if (castling_rights & CASTLE_BK)
+        {
+            if (pieces[F8] == NULL_PIECE &&
+                pieces[G8] == NULL_PIECE &&
+                pieces[H8] ==
+                    (PIECE_COLOR_BLACK | PIECE_TYPE_ROOK) &&
+                !IsSquareAttacked(E8, TURN_WHITE) &&
+                !IsSquareAttacked(F8, TURN_WHITE) &&
+                !IsSquareAttacked(G8, TURN_WHITE))
+            {
+                Move move;
+                move.from = E8;
+                move.to = G8;
+                move.moved = king;
+                move.captured = NULL_PIECE;
+                move.flags = MOVE_CASTLE_KINGSIDE;
+                move.prev_castling_rights = castling_rights;
+
+                moves.push_back(move);
+            }
+        }
+
+        // Black queenside: e8 -> c8
+        if (castling_rights & CASTLE_BQ)
+        {
+            if (pieces[D8] == NULL_PIECE &&
+                pieces[C8] == NULL_PIECE &&
+                pieces[B8] == NULL_PIECE &&
+                pieces[A8] ==
+                    (PIECE_COLOR_BLACK | PIECE_TYPE_ROOK) &&
+                !IsSquareAttacked(E8, TURN_WHITE) &&
+                !IsSquareAttacked(D8, TURN_WHITE) &&
+                !IsSquareAttacked(C8, TURN_WHITE))
+            {
+                Move move;
+                move.from = E8;
+                move.to = C8;
+                move.moved = king;
+                move.captured = NULL_PIECE;
+                move.flags = MOVE_CASTLE_QUEENSIDE;
+                move.prev_castling_rights = castling_rights;
+
+                moves.push_back(move);
+            }
         }
     }
 }
