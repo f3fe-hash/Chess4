@@ -94,6 +94,86 @@ ChessBoard::ChessBoard()
 }
 
 
+bool ChessBoard::LoadFEN(const std::string& fen)
+{
+    // Clear board
+    for (int i = 0; i < 64; ++i)
+        pieces[i] = NULL_PIECE;
+
+    // Split FEN by spaces
+    std::string part;
+    size_t idx = 0;
+    size_t len = fen.size();
+
+    // Piece placement
+    int square = 63; // start at a8
+    while (idx < len && fen[idx] != ' ')
+    {
+        char c = fen[idx];
+        if (c == '/')
+        {
+            ++idx;
+            continue;
+        }
+
+        if (c >= '1' && c <= '8')
+        {
+            int skip = c - '0';
+            square -= skip;
+            ++idx;
+            continue;
+        }
+
+        Piece p = NULL_PIECE;
+        bool white = (c >= 'A' && c <= 'Z');
+        char lower = (white ? (c - 'A' + 'a') : c);
+
+        switch (lower)
+        {
+            case 'p': p = PIECE_TYPE_PAWN; break;
+            case 'n': p = PIECE_TYPE_KNIGHT; break;
+            case 'b': p = PIECE_TYPE_BISHOP; break;
+            case 'r': p = PIECE_TYPE_ROOK; break;
+            case 'q': p = PIECE_TYPE_QUEEN; break;
+            case 'k': p = PIECE_TYPE_KING; break;
+            default: p = NULL_PIECE; break;
+        }
+
+        if (p != NULL_PIECE)
+        {
+            if (white)
+                p |= PIECE_COLOR_WHITE;
+            else
+                p |= PIECE_COLOR_BLACK;
+
+            if (square >= 0 && square < 64)
+                pieces[square] = p;
+            --square;
+        }
+
+        ++idx;
+    }
+
+    // Skip space
+    while (idx < len && fen[idx] == ' ') ++idx;
+
+    // Active color
+    if (idx < len)
+    {
+        char c = fen[idx];
+        if (c == 'w')
+            turn = TURN_WHITE;
+        else if (c == 'b')
+            turn = TURN_BLACK;
+    }
+
+    // Update occupancies and attacks
+    UpdateAttackBitboards();
+
+    return true;
+}
+
+
 ChessBoard::~ChessBoard()
 {}
 
@@ -464,17 +544,16 @@ void ChessBoard::GetLegalPawnAttacks(std::vector<Move>& moves)
 
 void ChessBoard::GetLegalKnightAttacks(std::vector<Move>& moves)
 {
-    UpdateAttackBitboards();
+    
     Bitboard opponentOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_black : occupancy_bitboard_white;
+    Bitboard knights = occupancy_bitboards[
+        PIECE_TYPE_KNIGHT | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
 
-    for (Square square = 0; square < 64; ++square)
+    while (knights)
     {
+        Square square = PopLeastSignificantBit(knights);
         Piece piece = pieces[square];
-        if ((piece & 0x07) != PIECE_TYPE_KNIGHT)
-            continue;
-        if (!PieceIsFriendly(piece, turn))
-            continue;
-
         Bitboard targets = knight_attack_lookup[square] & opponentOccupancy;
         while (targets)
         {
@@ -487,7 +566,7 @@ void ChessBoard::GetLegalKnightAttacks(std::vector<Move>& moves)
 
 void ChessBoard::GetLegalBishopAttacks(std::vector<Move>& moves)
 {
-    UpdateAttackBitboards();
+    
     Bitboard opponentOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_black : occupancy_bitboard_white;
 
     static const int bishopDirs[4][2] = {
@@ -495,15 +574,14 @@ void ChessBoard::GetLegalBishopAttacks(std::vector<Move>& moves)
     };
 
     Bitboard occupancy = occupancy_bitboard_white | occupancy_bitboard_black;
+    Bitboard bishops = occupancy_bitboards[
+        PIECE_TYPE_BISHOP | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
 
-    for (Square square = 0; square < 64; ++square)
+    while (bishops)
     {
+        Square square = PopLeastSignificantBit(bishops);
         Piece piece = pieces[square];
-        if ((piece & 0x07) != PIECE_TYPE_BISHOP)
-            continue;
-        if (!PieceIsFriendly(piece, turn))
-            continue;
-
         Bitboard targets = ComputeSlidingAttacks(square, occupancy, bishopDirs, 4) & opponentOccupancy;
         while (targets)
         {
@@ -516,7 +594,7 @@ void ChessBoard::GetLegalBishopAttacks(std::vector<Move>& moves)
 
 void ChessBoard::GetLegalQueenAttacks(std::vector<Move>& moves)
 {
-    UpdateAttackBitboards();
+    
     Bitboard opponentOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_black : occupancy_bitboard_white;
 
     static const int queenDirs[8][2] = {
@@ -524,15 +602,14 @@ void ChessBoard::GetLegalQueenAttacks(std::vector<Move>& moves)
     };
 
     Bitboard occupancy = occupancy_bitboard_white | occupancy_bitboard_black;
+    Bitboard queens = occupancy_bitboards[
+        PIECE_TYPE_QUEEN | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
 
-    for (Square square = 0; square < 64; ++square)
+    while (queens)
     {
+        Square square = PopLeastSignificantBit(queens);
         Piece piece = pieces[square];
-        if ((piece & 0x07) != PIECE_TYPE_QUEEN)
-            continue;
-        if (!PieceIsFriendly(piece, turn))
-            continue;
-
         Bitboard targets = ComputeSlidingAttacks(square, occupancy, queenDirs, 8) & opponentOccupancy;
         while (targets)
         {
@@ -545,17 +622,16 @@ void ChessBoard::GetLegalQueenAttacks(std::vector<Move>& moves)
 
 void ChessBoard::GetLegalKingAttacks(std::vector<Move>& moves)
 {
-    UpdateAttackBitboards();
+    
     Bitboard opponentOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_black : occupancy_bitboard_white;
+    Bitboard kings = occupancy_bitboards[
+        PIECE_TYPE_KING | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
 
-    for (Square square = 0; square < 64; ++square)
+    while (kings)
     {
+        Square square = PopLeastSignificantBit(kings);
         Piece piece = pieces[square];
-        if ((piece & 0x07) != PIECE_TYPE_KING)
-            continue;
-        if (!PieceIsFriendly(piece, turn))
-            continue;
-
         Bitboard targets = king_attack_lookup[square] & opponentOccupancy;
         while (targets)
         {
@@ -568,20 +644,21 @@ void ChessBoard::GetLegalKingAttacks(std::vector<Move>& moves)
 
 void ChessBoard::GetLegalPawnMoves(std::vector<Move>& moves)
 {
-    UpdateAttackBitboards();
+    
     Bitboard occupancy = occupancy_bitboard_white | occupancy_bitboard_black;
     Bitboard friendlyOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_white : occupancy_bitboard_black;
 
     int forward = (turn == TURN_WHITE) ? 1 : -1;
     int startRank = (turn == TURN_WHITE) ? 1 : 6;
 
-    for (Square square = 0; square < 64; ++square)
+    Bitboard pawns = occupancy_bitboards[
+        PIECE_TYPE_PAWN | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+
+    while (pawns)
     {
+        Square square = PopLeastSignificantBit(pawns);
         Piece piece = pieces[square];
-        if ((piece & 0x07) != PIECE_TYPE_PAWN)
-            continue;
-        if (!PieceIsFriendly(piece, turn))
-            continue;
 
         int x = get_piece_x(square);
         int y = get_piece_y(square);
@@ -622,17 +699,16 @@ void ChessBoard::GetLegalPawnMoves(std::vector<Move>& moves)
 
 void ChessBoard::GetLegalKnightMoves(std::vector<Move>& moves)
 {
-    UpdateAttackBitboards();
+    
     Bitboard friendlyOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_white : occupancy_bitboard_black;
+    Bitboard knights = occupancy_bitboards[
+        PIECE_TYPE_KNIGHT | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
 
-    for (Square square = 0; square < 64; ++square)
+    while (knights)
     {
+        Square square = PopLeastSignificantBit(knights);
         Piece piece = pieces[square];
-        if ((piece & 0x07) != PIECE_TYPE_KNIGHT)
-            continue;
-        if (!PieceIsFriendly(piece, turn))
-            continue;
-
         Bitboard targets = knight_attack_lookup[square] & ~friendlyOccupancy;
         while (targets)
         {
@@ -645,7 +721,7 @@ void ChessBoard::GetLegalKnightMoves(std::vector<Move>& moves)
 
 void ChessBoard::GetLegalBishopMoves(std::vector<Move>& moves)
 {
-    UpdateAttackBitboards();
+    
     Bitboard occupancy = occupancy_bitboard_white | occupancy_bitboard_black;
     Bitboard friendlyOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_white : occupancy_bitboard_black;
 
@@ -653,14 +729,14 @@ void ChessBoard::GetLegalBishopMoves(std::vector<Move>& moves)
         {1, 1}, {1, -1}, {-1, 1}, {-1, -1}
     };
 
-    for (Square square = 0; square < 64; ++square)
-    {
-        Piece piece = pieces[square];
-        if ((piece & 0x07) != PIECE_TYPE_BISHOP)
-            continue;
-        if (!PieceIsFriendly(piece, turn))
-            continue;
+    Bitboard bishops = occupancy_bitboards[
+        PIECE_TYPE_BISHOP | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
 
+    while (bishops)
+    {
+        Square square = PopLeastSignificantBit(bishops);
+        Piece piece = pieces[square];
         Bitboard targets = ComputeSlidingAttacks(square, occupancy, bishopDirs, 4) & ~friendlyOccupancy;
         while (targets)
         {
@@ -673,7 +749,7 @@ void ChessBoard::GetLegalBishopMoves(std::vector<Move>& moves)
 
 void ChessBoard::GetLegalQueenMoves(std::vector<Move>& moves)
 {
-    UpdateAttackBitboards();
+    
     Bitboard occupancy = occupancy_bitboard_white | occupancy_bitboard_black;
     Bitboard friendlyOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_white : occupancy_bitboard_black;
 
@@ -681,14 +757,14 @@ void ChessBoard::GetLegalQueenMoves(std::vector<Move>& moves)
         {1, 1}, {1, -1}, {-1, 1}, {-1, -1}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}
     };
 
-    for (Square square = 0; square < 64; ++square)
-    {
-        Piece piece = pieces[square];
-        if ((piece & 0x07) != PIECE_TYPE_QUEEN)
-            continue;
-        if (!PieceIsFriendly(piece, turn))
-            continue;
+    Bitboard queens = occupancy_bitboards[
+        PIECE_TYPE_QUEEN | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
 
+    while (queens)
+    {
+        Square square = PopLeastSignificantBit(queens);
+        Piece piece = pieces[square];
         Bitboard targets = ComputeSlidingAttacks(square, occupancy, queenDirs, 8) & ~friendlyOccupancy;
         while (targets)
         {
@@ -701,17 +777,16 @@ void ChessBoard::GetLegalQueenMoves(std::vector<Move>& moves)
 
 void ChessBoard::GetLegalKingMoves(std::vector<Move>& moves)
 {
-    UpdateAttackBitboards();
+    
     Bitboard friendlyOccupancy = (turn == TURN_WHITE) ? occupancy_bitboard_white : occupancy_bitboard_black;
+    Bitboard kings = occupancy_bitboards[
+        PIECE_TYPE_KING | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
 
-    for (Square square = 0; square < 64; ++square)
+    while (kings)
     {
+        Square square = PopLeastSignificantBit(kings);
         Piece piece = pieces[square];
-        if ((piece & 0x07) != PIECE_TYPE_KING)
-            continue;
-        if (!PieceIsFriendly(piece, turn))
-            continue;
-
         Bitboard targets = king_attack_lookup[square] & ~friendlyOccupancy;
         while (targets)
         {
@@ -750,21 +825,55 @@ std::vector<Move> ChessBoard::GetLegalMoves()
 }
 
 
+bool ChessBoard::IsLegalMove(Move move)
+{
+    std::vector<Move> moves = GetLegalMoves();
+
+    for (Move move_ : moves)
+    {
+        if ((move.from == move_.from) && (move.to && move_.to))
+            return true;
+    }
+
+    return false;
+}
+
+
 bool ChessBoard::IsCheck()
 {
-    return false;
+    UpdateAttackBitboards();
+
+    Bitboard opponentAttacks = (turn == TURN_WHITE) ? attack_bitboard_black : attack_bitboard_white;
+
+    Bitboard kings = occupancy_bitboards[
+        PIECE_TYPE_KING | (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+
+    if (!kings)
+        return false;
+
+    Square kingSq = Square(__builtin_ctzll(kings));
+    return (opponentAttacks & SquareMask(kingSq)) != 0;
 }
 
 
 bool ChessBoard::IsCheckMate()
 {
-    return false;
+    if (!IsCheck())
+        return false;
+
+    std::vector<Move> legal = GetLegalMoves();
+    return legal.empty();
 }
 
 
 bool ChessBoard::IsStaleMate()
 {
-    return false;
+    if (IsCheck())
+        return false;
+
+    std::vector<Move> legal = GetLegalMoves();
+    return legal.empty();
 }
 
 
@@ -776,17 +885,12 @@ uint8_t ChessBoard::CountPawns()
                 PIECE_COLOR_WHITE :
                 PIECE_COLOR_BLACK)
         ];
-    
-    Square square;
-
-    uint8_t count;
+    uint8_t count = 0;
     while (pawns)
     {
-        square = PopLeastSignificantBit(pawns);
-
-        count++;
+        PopLeastSignificantBit(pawns);
+        ++count;
     }
-
     return count;
 }
 
@@ -799,17 +903,12 @@ uint8_t ChessBoard::CountKnights()
                 PIECE_COLOR_WHITE :
                 PIECE_COLOR_BLACK)
         ];
-    
-    Square square;
-
-    uint8_t count;
+    uint8_t count = 0;
     while (knights)
     {
-        square = PopLeastSignificantBit(knights);
-
-        count++;
+        PopLeastSignificantBit(knights);
+        ++count;
     }
-
     return count;
 }
 
@@ -822,17 +921,12 @@ uint8_t ChessBoard::CountBishops()
                 PIECE_COLOR_WHITE :
                 PIECE_COLOR_BLACK)
         ];
-    
-    Square square;
-
-    uint8_t count;
+    uint8_t count = 0;
     while (bishops)
     {
-        square = PopLeastSignificantBit(bishops);
-
-        count++;
+        PopLeastSignificantBit(bishops);
+        ++count;
     }
-
     return count;
 }
 
@@ -845,17 +939,12 @@ uint8_t ChessBoard::CountRooks()
                 PIECE_COLOR_WHITE :
                 PIECE_COLOR_BLACK)
         ];
-    
-    Square square;
-
-    uint8_t count;
+    uint8_t count = 0;
     while (rooks)
     {
-        square = PopLeastSignificantBit(rooks);
-
-        count++;
+        PopLeastSignificantBit(rooks);
+        ++count;
     }
-
     return count;
 }
 
@@ -868,17 +957,12 @@ uint8_t ChessBoard::CountQueens()
                 PIECE_COLOR_WHITE :
                 PIECE_COLOR_BLACK)
         ];
-    
-    Square square;
-
-    uint8_t count;
+    uint8_t count = 0;
     while (queens)
     {
-        square = PopLeastSignificantBit(queens);
-
-        count++;
+        PopLeastSignificantBit(queens);
+        ++count;
     }
-
     return count;
 }
 
@@ -891,17 +975,12 @@ uint8_t ChessBoard::CountKings()
                 PIECE_COLOR_WHITE :
                 PIECE_COLOR_BLACK)
         ];
-    
-    Square square;
-
-    uint8_t count;
+    uint8_t count = 0;
     while (kings)
     {
-        square = PopLeastSignificantBit(kings);
-
-        count++;
+        PopLeastSignificantBit(kings);
+        ++count;
     }
-
     return count;
 }
 

@@ -5,12 +5,10 @@
 
 #include <memory>
 #include <chrono>
+#include <algorithm>
 
 #include "chess.hpp"
 #include "eval.hpp"
-
-#define min(a, b) ( (a) < (b) ? (a) : (b) )
-#define max(a, b) ( (a) > (b) ? (a) : (b) )
 
 struct MoveResult
 {
@@ -19,7 +17,7 @@ struct MoveResult
     uint64_t nodes_searched;
 };
 
-using DurationMs = std::chrono::duration<std::chrono::microseconds>;
+using DurationMs = std::chrono::microseconds;
 
 class ChessBot
 {

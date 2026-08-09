@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include <vector>
+#include <string>
 
 // Note: pieces only actually take up 6 bits.
 using Square = uint8_t;
@@ -97,6 +98,8 @@ public:
 
     std::vector<Move> GetLegalMoves();
 
+    bool IsLegalMove(Move move);
+
     bool IsCheck();
     bool IsCheckMate();
     bool IsStaleMate();
@@ -113,4 +116,7 @@ public:
 
     inline void SetTurnColor(bool turn_color)
     { turn = turn_color; }
+
+    // Load board from FEN string. Returns true on success.
+    bool LoadFEN(const std::string& fen);
 };

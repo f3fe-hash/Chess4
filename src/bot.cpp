@@ -49,7 +49,7 @@ MoveResult ChessBot::Search(int depth)
                 best_move.eval = eval;
             }
 
-            alpha = max(best_eval, alpha);
+            alpha = std::max(best_eval, alpha);
         }
         else
         {
@@ -60,7 +60,7 @@ MoveResult ChessBot::Search(int depth)
                 best_move.eval = eval;
             }
 
-            beta = min(best_eval, beta);
+            beta = std::min(best_eval, beta);
         }
 
         // Prune.
@@ -100,13 +100,13 @@ Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
 
         if (maximizing)
         {
-            best_eval   = max(best_eval, eval);
-            alpha       = max(best_eval, alpha);
+            best_eval   = std::max(best_eval, eval);
+            alpha       = std::max(best_eval, alpha);
         }
         else
         {
-            best_eval   = min(best_eval, eval);
-            beta        = min(best_eval, beta);
+            best_eval   = std::min(best_eval, eval);
+            beta        = std::min(best_eval, beta);
         }
 
         // Prune.
