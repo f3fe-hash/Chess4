@@ -2,6 +2,7 @@
 
 
 const int CHECKMATE_SCORE = 1e+9; // 1 billion
+const int CHECK_SCORE = 100;
 
 
 ChessBot::ChessBot(std::shared_ptr<ChessBoard> _board) : evaluator(_board), board(_board)
@@ -86,7 +87,7 @@ int ChessBot::DepthExtension()
 }
 
 
-Evaluation ChessBot::SearchCore(Evaluation& alpha, Evaluation& beta, int depth, Move move, int move_idx)
+Evaluation ChessBot::SearchCore(Evaluation& alpha, Evaluation& beta, int depth, int ply, Move move, int move_idx)
 {
     // Core of the search algorithm
 
@@ -116,7 +117,7 @@ Evaluation ChessBot::SearchCore(Evaluation& alpha, Evaluation& beta, int depth, 
     
     int search_depth = std::max(0, depth - 1 + extension);
 
-    Evaluation eval = MainSearch(alpha, beta, search_depth);
+    Evaluation eval = MainSearch(alpha, beta, search_depth, ply + 1);
 
     board->UndoMove(move);
 
@@ -188,7 +189,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
             int search_depth = std::max(0, depth - 1 + extension);
 
-            Evaluation eval = MainSearch(alpha, beta, search_depth);
+            Evaluation eval = MainSearch(alpha, beta, search_depth, 0);
 
             board->UndoMove(move);
 
@@ -250,7 +251,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 }
 
 
-Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
+Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply)
 {
     nodes_searched++;
 
@@ -269,13 +270,14 @@ Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
     bool maximizing = board->GetTurnColor() == TURN_WHITE;
 
     // Checkmate / Stalemate
+    bool check = board->IsCheck();
     if (moves.empty())
     {
-        if (board->IsCheck())
+        if (check)
         {
             return maximizing
-                ? (-CHECKMATE_SCORE - depth)
-                : (CHECKMATE_SCORE + depth);
+                ? (-CHECKMATE_SCORE - ply)
+                : (CHECKMATE_SCORE + ply);
         }
 
         return 0;
@@ -329,7 +331,7 @@ Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
             Move move = moves[move_idx];
 
             Evaluation eval =
-                SearchCore(alpha, beta, depth, move, move_idx);
+                SearchCore(alpha, beta, depth, ply, move, move_idx);
 
             if (time_up)
                 return 0;
@@ -359,7 +361,7 @@ Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
             Move move = moves[move_idx];
 
             Evaluation eval =
-                SearchCore(alpha, beta, depth, move, move_idx);
+                SearchCore(alpha, beta, depth, ply, move, move_idx);
 
             if (time_up)
                 return 0;

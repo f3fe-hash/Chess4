@@ -59,8 +59,8 @@ class ChessBot
         return board->GetZobristHash();
     }
 
-    Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth);
-    Evaluation SearchCore(Evaluation& alpha, Evaluation& beta, int depth, Move move, int move_idx);
+    Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply);
+    Evaluation SearchCore(Evaluation& alpha, Evaluation& beta, int depth, int ply, Move move, int move_idx);
 
     bool CompareMoves(const Move& move1, const Move& move2);
     void SortMoves(std::vector<Move>& moves);
