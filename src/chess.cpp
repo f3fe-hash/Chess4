@@ -842,7 +842,25 @@ std::vector<Move> ChessBoard::GetLegalMoves()
     for (Move move : moves)
     {
         MakeMove(move);
-        bool in_check = IsCheck();
+
+        // After MakeMove, `turn` is the opponent. We need to check
+        // whether the side that just moved (mover) is now in check.
+        TurnColor moverColor = (turn == TURN_WHITE) ? TURN_BLACK : TURN_WHITE;
+
+        // Find mover's king square
+        Bitboard moverKings = occupancy_bitboards[
+            PIECE_TYPE_KING | (moverColor == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+        ];
+
+        bool in_check = false;
+        if (moverKings)
+        {
+            Square kingSq = Square(__builtin_ctzll(moverKings));
+            Bitboard opponentAttacks = (turn == TURN_WHITE) ? attack_bitboard_white : attack_bitboard_black;
+            if (opponentAttacks & SquareMask(kingSq))
+                in_check = true;
+        }
+
         UndoMove(move);
 
         if (in_check)

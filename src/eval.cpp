@@ -1,4 +1,5 @@
 #include "eval.hpp"
+#include <algorithm>
 
 
 // Piece values
@@ -10,7 +11,8 @@ const int QUEEN_VALUE   = 900;
 
 // Evaluation multipliers
 const float PIECE_VALUE_MULTIPLIER = 1;
-const float PST_EVAL_MULTIPLIER = 1.5;
+const float PST_EVAL_MULTIPLIER    = 1.5;
+const float MOP_UP_MULTIPLIER      = 2;
 
 
 //
@@ -168,6 +170,124 @@ Evaluation ChessBoardEvaluation::EvaluatePSTs()
 }
 
 
+Evaluation ChessBoardEvaluation::ComputeMopupBonus()
+{
+    // Mop-up bonus: if one side has only a king and the other side has
+    // significant material (rook or queen), give a small bonus that
+    // grows the closer the attacker's major piece is to the lone king.
+
+    int white_material = 0;
+    int black_material = 0;
+    int white_nonking_count = 0;
+    int black_nonking_count = 0;
+    Square white_king_sq = 64;
+    Square black_king_sq = 64;
+    std::vector<Square> white_attack_sqs;
+    std::vector<Square> black_attack_sqs;
+
+    for (Square sq = 0; sq < 64; ++sq)
+    {
+        Piece p = board->GetPieceAt(sq);
+        if (p == NULL_PIECE) continue;
+        uint8_t type = p & 0x07;
+        bool is_white = bool(p & PIECE_COLOR_WHITE);
+
+        int val = 0;
+        switch (type)
+        {
+            case PIECE_TYPE_PAWN: val = PAWN_VALUE; break;
+            case PIECE_TYPE_KNIGHT: val = KNIGHT_VALUE; break;
+            case PIECE_TYPE_BISHOP: val = BISHOP_VALUE; break;
+            case PIECE_TYPE_ROOK: val = ROOK_VALUE; break;
+            case PIECE_TYPE_QUEEN: val = QUEEN_VALUE; break;
+            case PIECE_TYPE_KING: val = 0; break;
+            default: val = 0; break;
+        }
+
+        if (is_white)
+        {
+            white_material += val;
+            if (type != PIECE_TYPE_KING)
+            {
+                white_nonking_count++;
+                if (type == PIECE_TYPE_ROOK || type == PIECE_TYPE_QUEEN)
+                    white_attack_sqs.push_back(sq);
+            }
+            else
+                white_king_sq = sq;
+        }
+        else
+        {
+            black_material += val;
+            if (type != PIECE_TYPE_KING)
+            {
+                black_nonking_count++;
+                if (type == PIECE_TYPE_ROOK || type == PIECE_TYPE_QUEEN)
+                    black_attack_sqs.push_back(sq);
+            }
+            else
+                black_king_sq = sq;
+        }
+    }
+
+    auto chebyshev_dist = [](Square a, Square b) -> int {
+        uint8_t ax = get_piece_x(a), ay = get_piece_y(a);
+        uint8_t bx = get_piece_x(b), by = get_piece_y(b);
+        int dx = (int)ax - (int)bx;
+        int dy = (int)ay - (int)by;
+        dx = dx < 0 ? -dx : dx;
+        dy = dy < 0 ? -dy : dy;
+        return dx > dy ? dx : dy;
+    };
+
+    float white_bonus = 0.0f;
+    float black_bonus = 0.0f;
+
+    // If white has only king and black has at least a rook/queen
+    if (white_nonking_count == 0 && black_material >= ROOK_VALUE && white_king_sq < 64 && black_king_sq < 64)
+    {
+        int min_dist_major = 8;
+        for (Square s : black_attack_sqs)
+            min_dist_major = std::min(min_dist_major, chebyshev_dist(s, white_king_sq));
+
+        int king_dist = chebyshev_dist(black_king_sq, white_king_sq);
+        int effective_dist = std::min(min_dist_major, king_dist);
+
+        float mop_bonus = 180.0f;
+        mop_bonus += (black_material - ROOK_VALUE) * 0.05f;
+        mop_bonus -= effective_dist * 18.0f; // stronger penalty for distance
+        if (mop_bonus < 0) mop_bonus = 0;
+        black_bonus += mop_bonus;
+
+        // Bonus for attacker's king proximity to the lone king (encourage using king)
+        float king_prox_bonus = std::max(0.0f, 80.0f - (float)king_dist * 12.0f);
+        black_bonus += king_prox_bonus;
+    }
+
+    // If black has only king and white has at least a rook/queen
+    if (black_nonking_count == 0 && white_material >= ROOK_VALUE && white_king_sq < 64 && black_king_sq < 64)
+    {
+        int min_dist_major = 8;
+        for (Square s : white_attack_sqs)
+            min_dist_major = std::min(min_dist_major, chebyshev_dist(s, black_king_sq));
+
+        int king_dist = chebyshev_dist(white_king_sq, black_king_sq);
+        int effective_dist = std::min(min_dist_major, king_dist);
+
+        float mop_bonus = 180.0f;
+        mop_bonus += (white_material - ROOK_VALUE) * 0.05f;
+        mop_bonus -= effective_dist * 18.0f;
+        if (mop_bonus < 0) mop_bonus = 0;
+        white_bonus += mop_bonus;
+
+        float king_prox_bonus = std::max(0.0f, 80.0f - (float)king_dist * 12.0f);
+        white_bonus += king_prox_bonus;
+    }
+
+    return white_bonus - black_bonus;
+}
+
+
 Evaluation ChessBoardEvaluation::EvaluatePosition()
 {
     bool turn = board->GetTurnColor();
@@ -183,6 +303,11 @@ Evaluation ChessBoardEvaluation::EvaluatePosition()
     eval_black += PST_EVAL_MULTIPLIER * EvaluatePSTs();
 
     board->SetTurnColor(turn);
-    return eval_white - eval_black;
+
+    Evaluation base = eval_white - eval_black;
+
+    base += MOP_UP_MULTIPLIER * ComputeMopupBonus();
+    
+    return base;
 }
 

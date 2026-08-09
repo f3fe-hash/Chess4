@@ -6,6 +6,7 @@
 #include <memory>
 #include <chrono>
 #include <algorithm>
+#include <iostream>
 
 #include "chess.hpp"
 #include "eval.hpp"
@@ -33,6 +34,7 @@ class ChessBot
     uint64_t nodes_searched;
 
     Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth);
+    Evaluation SearchCore(Evaluation& alpha, Evaluation& beta, int depth, Move move, int move_idx);
 
     bool CompareMoves(const Move& move1, const Move& move2);
     void SortMoves(std::vector<Move>& moves);

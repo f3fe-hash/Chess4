@@ -63,6 +63,13 @@ void Console::run()
                 continue;
             }
 
+            if (board->IsStaleMate())
+            {
+                // Checkmate outranks check.
+                std::cout << "Stalemate!" << std::endl;
+                continue;
+            }
+
             if (board->IsCheck())
             {
                 std::cout << "Check!" << std::endl;
@@ -123,7 +130,11 @@ std::string Console::GetCommand(const std::string& prompt)
 {
     std::string buffer;
     std::cout << prompt;
-    std::cin >> buffer;
+    std::getline(std::cin, buffer);
+
+    // If the first getline consumed a leftover newline, read again
+    if (buffer.empty() && !std::cin.eof())
+        std::getline(std::cin, buffer);
 
     return buffer;
 }
@@ -193,14 +204,18 @@ Move Console::ParseMove(std::string move_str)
 
 void Console::ParseFEN(std::string fen_str)
 {
-    std::size_t p = 3;
+    std::size_t p = fen_str.find_first_of(' ');
+    if (p == std::string::npos)
+        return;
 
-    // Skip spaces
-    while (fen_str[p] == ' ')
-        p++;
-    
-    std::string fen = fen_str.substr(p);
+    std::size_t start = p + 1;
+    while (start < fen_str.size() && fen_str[start] == ' ')
+        ++start;
 
+    if (start >= fen_str.size())
+        return;
+
+    std::string fen = fen_str.substr(start);
     board->LoadFEN(fen);
 }
 

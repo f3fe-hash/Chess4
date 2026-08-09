@@ -40,10 +40,14 @@ static inline Evaluation MoveOrderScore(const Move& move)
 {
     if (move.captured == NULL_PIECE)
         return 0;
+    
+    int score = 0;
 
     Evaluation victim = PieceValue(move.captured);
     Evaluation attacker = PieceValue(move.moved);
-    return (victim * 100) - attacker;
+    score += (victim * 100) - attacker;
+
+    return score;
 }
 
 bool ChessBot::CompareMoves(const Move& move1, const Move& move2)
@@ -121,11 +125,14 @@ MoveResult ChessBot::Search(int max_depth)
 
             int extension = DepthExtension();
             if ((move_idx >= 5) && (extension == 0))
-                extension = -1;
+                extension -= 1;
 
             int search_depth = std::max(0, depth - 1 + extension);
+
             max_effective_depth = std::max(max_effective_depth, search_depth);
+
             Evaluation eval = MainSearch(alpha, beta, search_depth);
+
             board->UndoMove(move);
 
             if (time_up)
@@ -187,6 +194,40 @@ MoveResult ChessBot::Search(int max_depth)
 }
 
 
+Evaluation ChessBot::SearchCore(Evaluation& alpha, Evaluation& beta, int depth, Move move, int move_idx)
+{
+    // Core of the search algorithm
+
+    board->MakeMove(move);
+
+    int extension = DepthExtension();
+    if (extension == 0)
+    {
+        // No extension.
+
+        // Low reduction.
+        if (move_idx >= 5)
+            extension = -1;
+        
+        // Mid reduction.
+        if (move_idx >= 15)
+            extension = -2;
+        
+        // High reduction.
+        if (move_idx >= 35)
+            extension = -3;
+    }
+    
+    int search_depth = std::max(0, depth - 1 + extension);
+
+    Evaluation eval = MainSearch(alpha, beta, search_depth);
+
+    board->UndoMove(move);
+
+    return eval;
+}
+
+
 Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
 {
     nodes_searched++;
@@ -202,12 +243,6 @@ Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
         }
     }
 
-    // Left node
-    if (depth == 0)
-    {
-        return evaluator.EvaluatePosition();
-    }
-
     std::vector<Move> moves = board->GetLegalMoves();
     bool maximizing = board->GetTurnColor() == TURN_WHITE;
 
@@ -217,10 +252,16 @@ Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
         if (board->IsCheck())
         {
             // High depth left means we found it sooner/closer to the root
-            return maximizing ? (-CHECKMATE_SCORE + depth) : (CHECKMATE_SCORE - depth);
+            return maximizing ? (-CHECKMATE_SCORE - depth) : (CHECKMATE_SCORE + depth);
         }
         else
             return 0; // draw
+    }
+
+    // Leaf node
+    if (depth == 0)
+    {
+        return evaluator.EvaluatePosition();
     }
 
     // Sort the moves.
@@ -238,14 +279,7 @@ Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
             
             Move move = moves[move_idx];
 
-            int extension = DepthExtension();
-            if ((move_idx >= 5) && (extension == 0))
-                extension = -1;
-
-            board->MakeMove(move);
-            int search_depth = std::max(0, depth - 1 + extension);
-            Evaluation eval = MainSearch(alpha, beta, search_depth);
-            board->UndoMove(move);
+            Evaluation eval = SearchCore(alpha, beta, depth, move, move_idx);
 
             if (eval >= beta)
             {
@@ -264,14 +298,7 @@ Evaluation ChessBot::MainSearch(Evaluation alpha, Evaluation beta, int depth)
 
             Move move = moves[move_idx];
 
-            int extension = DepthExtension();
-            if ((move_idx >= 5) && (extension == 0))
-                extension = -1;
-
-            board->MakeMove(move);
-            int search_depth = std::max(0, depth - 1 + extension);
-            Evaluation eval = MainSearch(alpha, beta, search_depth);
-            board->UndoMove(move);
+            Evaluation eval = SearchCore(alpha, beta, depth, move, move_idx);
 
             if (eval <= alpha)
             {

@@ -17,6 +17,9 @@ class ChessBoardEvaluation
 
     Evaluation EvaluatePSTs();
 
+    // Compute mop-up endgame bonus (white - black)
+    Evaluation ComputeMopupBonus();
+
 public:
     ChessBoardEvaluation(std::shared_ptr<ChessBoard> _board);
     ~ChessBoardEvaluation();
