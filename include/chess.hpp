@@ -122,7 +122,26 @@ struct Move
 
     int8_t flags;
     CastlingRights prev_castling_rights;
+
+    bool operator == (const Move& other)
+    {
+        bool final_ =
+            (from == other.from) &&
+            (to == other.to);
+        
+        // Only compare moved pieces if they are set.
+        if (moved && other.moved)
+            final_ = final_ && (moved == other.moved);
+        
+        // Only compare captured pieces if they are set.
+        if (captured && other.captured)
+            final_ = final_ && (moved == other.moved);
+        
+        return final_;
+    }
 };
+
+using ZobristHash = uint64_t;
 
 struct ZobristTable 
 {
@@ -228,6 +247,7 @@ public:
     void UndoMove(Move move);
 
     std::vector<Move> GetLegalMoves();
+    std::vector<Move> GetLegalCaptures();
 
     bool IsLegalMove(Move move);
 

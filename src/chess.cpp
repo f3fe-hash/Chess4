@@ -1577,6 +1577,62 @@ std::vector<Move> ChessBoard::GetLegalMoves()
 }
 
 
+std::vector<Move> ChessBoard::GetLegalCaptures()
+{
+    std::vector<Move> moves;
+    GetLegalPawnMoves(moves);
+    GetLegalKnightMoves(moves);
+    GetLegalBishopMoves(moves);
+    GetLegalRookMoves(moves);
+    GetLegalQueenMoves(moves);
+    GetLegalKingMoves(moves);
+    
+    std::vector<Move> legal_captures;
+    legal_captures.reserve(moves.size());
+
+    for (Move move : moves)
+    {
+        MakeMove(move);
+
+        // After MakeMove, `turn` is the opponent. We need to check
+        // whether the side that just moved (mover) is now in check.
+        TurnColor moverColor = (turn == TURN_WHITE) ? TURN_BLACK : TURN_WHITE;
+
+        // Find mover's king square
+        Bitboard moverKings = occupancy_bitboards[
+            PIECE_TYPE_KING | (moverColor == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+        ];
+
+        bool in_check = false;
+        if (moverKings)
+        {
+            Square kingSq = Square(__builtin_ctzll(moverKings));
+            Bitboard opponentAttacks = (turn == TURN_WHITE) ? attack_bitboard_white : attack_bitboard_black;
+            if (opponentAttacks & SquareMask(kingSq))
+                in_check = true;
+        }
+
+
+        Bitboard occ = turn ? occupancy_bitboard_white : occupancy_bitboard_black;
+
+        UndoMove(move);
+
+        if (in_check)
+            continue;
+        
+        if (move.to & occ)
+        {
+            // Capture
+            continue;
+        }
+
+        legal_captures.push_back(move);
+    }
+
+    return legal_captures;
+}
+
+
 bool ChessBoard::IsLegalMove(Move move)
 {
     std::vector<Move> moves = GetLegalMoves();

@@ -12,6 +12,7 @@
 
 #include "chess.hpp"
 #include "eval.hpp"
+#include "transposition_table.hpp"
 
 
 struct MoveResult
@@ -26,20 +27,6 @@ struct MoveResult
 using DurationMs = std::chrono::milliseconds;
 
 
-struct TranspositionEntry
-{
-    Evaluation eval;
-    uint8_t depth;
-
-    enum Bound : uint8_t
-    {
-        EXACT,
-        LOWER_BOUND,
-        UPPER_BOUND
-    } bound;
-};
-
-
 class ChessBot
 {
     ChessBoardEvaluation evaluator;
@@ -50,7 +37,7 @@ class ChessBot
     std::chrono::steady_clock::time_point search_start;
     bool time_up;
 
-    std::unordered_map<uint64_t, TranspositionEntry> transposition_table;
+    std::shared_ptr<TranspositionTable> transposition_table;
 
     uint64_t nodes_searched;
 
@@ -75,7 +62,8 @@ public:
     DurationMs GetTimeLimit()
     { return time_limit; }
 
-    Evaluation Evaluate();
+    inline Evaluation Evaluate()
+    { return evaluator.QuiesenceSearch(10); }
 
     MoveResult Search(int min_depth, int max_depth);
 };

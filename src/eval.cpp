@@ -2,6 +2,9 @@
 #include <algorithm>
 
 
+const int CHECKMATE_SCORE = 1000000000;
+
+
 // Piece values
 const int PAWN_VALUE    = 100;
 const int KNIGHT_VALUE  = 300;
@@ -10,9 +13,10 @@ const int ROOK_VALUE    = 500;
 const int QUEEN_VALUE   = 900;
 
 // Evaluation multipliers
-const float PIECE_VALUE_MULTIPLIER = 1;
-const float PST_EVAL_MULTIPLIER    = 1.5;
-const float MOP_UP_MULTIPLIER      = 1;
+const float PIECE_VALUE_MULTIPLIER = 0.5;
+const float PST_EVAL_MULTIPLIER    = 1.2;
+const float MOP_UP_MULTIPLIER      = 1.3;
+const float MOBILITY_MULTIPLIER    = 1.1;
 
 
 //
@@ -98,7 +102,8 @@ const int KING_ENDGAME_PST[64] = {
 };
 
 
-ChessBoardEvaluation::ChessBoardEvaluation(std::shared_ptr<ChessBoard> _board) : board(_board)
+ChessBoardEvaluation::ChessBoardEvaluation(std::shared_ptr<ChessBoard> _board, std::shared_ptr<TranspositionTable> tt_) :
+    board(_board), transposition_table(tt_)
 {}
 
 
@@ -322,16 +327,16 @@ Evaluation ChessBoardEvaluation::ComputeMopupBonus()
         int king_distance =
             chebyshev_distance(white_king, black_king);
 
-        int major_distance = 8;
+        //int major_distance = 8;
 
-        for (Square major : white_majors)
-        {
-            major_distance =
-                std::min(
-                    major_distance,
-                    chebyshev_distance(major, black_king)
-                );
-        }
+        //for (Square major : white_majors)
+        //{
+        //    major_distance =
+        //        std::min(
+        //            major_distance,
+        //            chebyshev_distance(major, black_king)
+        //        );
+        //}
 
         //
         // 1. Force the enemy king toward the edge.
@@ -354,8 +359,8 @@ Evaluation ChessBoardEvaluation::ComputeMopupBonus()
         // A major piece close to the enemy king is more likely
         // to get attacked.
         //
-        white_bonus +=
-            major_distance * 10;
+        //white_bonus +=
+        //    major_distance * 10;
 
         //
         // 4. Extra major material.
@@ -379,16 +384,16 @@ Evaluation ChessBoardEvaluation::ComputeMopupBonus()
         int king_distance =
             chebyshev_distance(black_king, white_king);
 
-        int major_distance = 8;
+        //int major_distance = 8;
 
-        for (Square major : black_majors)
-        {
-            major_distance =
-                std::min(
-                    major_distance,
-                    chebyshev_distance(major, white_king)
-                );
-        }
+        //for (Square major : black_majors)
+        //{
+        //    major_distance =
+        //        std::min(
+        //           major_distance,
+        //            chebyshev_distance(major, white_king)
+        //        );
+        //}
 
         //
         // Force the enemy king toward the edge.
@@ -405,8 +410,8 @@ Evaluation ChessBoardEvaluation::ComputeMopupBonus()
         //
         // Keep the rook/queen away from the enemy king.
         //
-        black_bonus +=
-            major_distance * 10;
+        //black_bonus +=
+        //    major_distance * 10;
 
         //
         // Extra major material.
@@ -422,33 +427,165 @@ Evaluation ChessBoardEvaluation::ComputeMopupBonus()
 }
 
 
+Evaluation ChessBoardEvaluation::EvaluateMobility()
+{
+    
+}
+
+
+static inline Evaluation PieceValue(Piece piece)
+{
+    switch (piece & 0x07)
+    {
+        case PIECE_TYPE_PAWN:   return PAWN_VALUE;
+        case PIECE_TYPE_KNIGHT: return KNIGHT_VALUE;
+        case PIECE_TYPE_BISHOP: return BISHOP_VALUE;
+        case PIECE_TYPE_ROOK:   return ROOK_VALUE;
+        case PIECE_TYPE_QUEEN:  return QUEEN_VALUE;
+        case PIECE_TYPE_KING:   return 1000;
+        default:                return 0;
+    }
+}
+
+
+Evaluation ChessBoardEvaluation::MoveOrderScore(const Move& move)
+{
+    if (move.captured == NULL_PIECE)
+        return 0;
+    
+    // Lookup in transposition table.
+    ZobristHash key = board->GetZobristHash();
+    if (transposition_table->keyIsStored(key))
+    {
+        // It is stored! If this is the stored move, give it a higher ranking.
+        TranspositionTableEntry entry = transposition_table->getKey(key);
+        if (entry.best_move == move)
+            return 2000;
+    }
+
+    Evaluation victim = PieceValue(move.captured);
+    Evaluation attacker = PieceValue(move.moved);
+
+    return (victim * 10) - attacker;
+}
+
+
 Evaluation ChessBoardEvaluation::EvaluatePosition()
 {
     bool turn = board->GetTurnColor();
+
     Evaluation eval_white = 0;
     Evaluation eval_black = 0;
 
+    // ------------------------------------------------------------
+    // White evaluation.
+    // ------------------------------------------------------------
+
     board->SetTurnColor(TURN_WHITE);
+
     eval_white += PIECE_VALUE_MULTIPLIER * EvaluatePieceValues();
     eval_white += PST_EVAL_MULTIPLIER * EvaluatePSTs();
 
-    // Check bonus
+    //if (board->IsCheckMate())
+    //    eval_white -= 100000;
     if (board->IsCheck())
-        eval_white += 100;
+        eval_white -= 100;
+
+    // ------------------------------------------------------------
+    // Black evaluation.
+    // ------------------------------------------------------------
 
     board->SetTurnColor(TURN_BLACK);
+
     eval_black += PIECE_VALUE_MULTIPLIER * EvaluatePieceValues();
     eval_black += PST_EVAL_MULTIPLIER * EvaluatePSTs();
 
-    // Check bonus
+    //if (board->IsCheckMate())
+    //    eval_black -= 100000;
     if (board->IsCheck())
-        eval_black += 100;
+        eval_black -= 100;
 
+    // Restore original turn.
     board->SetTurnColor(turn);
 
     Evaluation base = eval_white - eval_black;
 
-    base += MOP_UP_MULTIPLIER * ComputeMopupBonus();
+    base +=
+        MOP_UP_MULTIPLIER * ComputeMopupBonus();
+
     return base;
+}
+
+
+Evaluation ChessBoardEvaluation::QuiesenceSearchMain(int depth, Evaluation alpha, Evaluation beta)
+{
+    // Evaluation a position only when all captures have been made.
+
+    // Get legal captures.
+    std::vector<Move> captures = board->GetLegalCaptures();
+
+    // No more captures.
+    if (captures.size() == 0)
+        return EvaluatePosition();
+
+    // Checkmate.
+    if (board->IsCheckMate())
+        return board->GetTurnColor() ? -CHECKMATE_SCORE : CHECKMATE_SCORE;
+    
+    // Stalemate.
+    if (board->IsStaleMate())
+        return 0;
+    
+    // Max depth.
+    if (depth == 0)
+        return EvaluatePosition();
+    
+
+    bool maximizing = board->GetTurnColor() == TURN_WHITE;
+    Evaluation best_eval = maximizing ? INT_MIN : INT_MAX;
+
+    for (Move capture : captures)
+    {
+        board->MakeMove(capture);
+
+        Evaluation eval = QuiesenceSearch(depth - 1);
+
+        board->UndoMove(capture);
+
+
+        if (maximizing)
+        {
+            if (eval > best_eval)
+            {
+                best_eval = eval;
+            }
+
+            alpha = std::max(alpha, eval);
+        }
+        else
+        {
+            if (eval < best_eval)
+            {
+                best_eval = eval;
+            }
+
+            beta = std::min(beta, eval);
+        }
+
+        // Prune.
+        if (alpha >= beta)
+            break;
+    }
+
+    return best_eval;
+}
+
+
+Evaluation ChessBoardEvaluation::QuiesenceSearch(int depth)
+{
+    Evaluation alpha = INT_MIN;
+    Evaluation beta = INT_MAX;
+
+    return QuiesenceSearchMain(depth, alpha, beta);
 }
 
