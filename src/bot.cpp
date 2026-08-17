@@ -200,9 +200,6 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
     int best_depth = 0;
 
-    // A new search gets a fresh TT.
-    //transposition_table->clear();
-
     // --------------------------------------------------------
     // Iterative deepening.
     // --------------------------------------------------------
@@ -383,11 +380,11 @@ Evaluation ChessBot::MainSearch(
 
             if (maximizing)
             {
-                return -CHECKMATE_SCORE + ply;
+                return -CHECKMATE_SCORE + ply; // Positive is good for white, negative is bad for white.
             }
             else
             {
-                return CHECKMATE_SCORE - ply;
+                return CHECKMATE_SCORE - ply; // Negative is good for black, positive is bad for black.
             }
         }
 

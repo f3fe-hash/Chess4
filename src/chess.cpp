@@ -1622,14 +1622,48 @@ std::vector<Move> ChessBoard::GetLegalCaptures()
         
         if (move.to & occ)
         {
-            // Capture
-            continue;
+            legal_captures.push_back(move);
         }
-
-        legal_captures.push_back(move);
     }
 
     return legal_captures;
+}
+
+
+void ChessBoard::GetNumLegalMovesAndCaptures(
+    size_t& moves_count,
+    size_t& captures_count)
+{
+    const Bitboard white = occupancy_bitboard_white;
+    const Bitboard black = occupancy_bitboard_black;
+
+    const Bitboard own   = (turn == TURN_WHITE) ? white : black;
+    const Bitboard enemy = (turn == TURN_WHITE) ? black : white;
+
+    const int color =
+        (turn == TURN_WHITE) ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK;
+
+    // If attack_bitboards contains the union of attacks for each piece type:
+    const Bitboard pawn_attacks   = attack_bitboards[PIECE_TYPE_PAWN   | color];
+    const Bitboard knight_attacks = attack_bitboards[PIECE_TYPE_KNIGHT | color];
+    const Bitboard bishop_attacks = attack_bitboards[PIECE_TYPE_BISHOP | color];
+    const Bitboard rook_attacks   = attack_bitboards[PIECE_TYPE_ROOK   | color];
+    const Bitboard queen_attacks  = attack_bitboards[PIECE_TYPE_QUEEN  | color];
+    const Bitboard king_attacks   = attack_bitboards[PIECE_TYPE_KING   | color];
+
+    const Bitboard attacks =
+        pawn_attacks |
+        knight_attacks |
+        bishop_attacks |
+        rook_attacks |
+        queen_attacks |
+        king_attacks;
+
+    // Can't move onto a square occupied by one of our own pieces.
+    const Bitboard moves = attacks & ~own;
+
+    moves_count = std::popcount(moves);
+    captures_count = std::popcount(moves & enemy);
 }
 
 

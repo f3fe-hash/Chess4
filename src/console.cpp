@@ -56,38 +56,25 @@ void Console::run()
             else
                 std::cout << "Illegal Move." << std::endl;
             
-            if (board->IsCheckMate())
-            {
-                // Checkmate outranks check.
-                std::cout << "Checkmate!" << std::endl;
-                continue;
-            }
-
-            if (board->IsStaleMate())
-            {
-                // Checkmate outranks check.
-                std::cout << "Stalemate!" << std::endl;
-                continue;
-            }
-
-            if (board->IsCheck())
-            {
-                std::cout << "Check!" << std::endl;
-                continue;
-            }
+            // Prints "Check!", "Checkmate!", "Stalemate!", or nothing.
+            PrintEndgame();
         }
+
         else if (cmd == "fen")
         {
             ParseFEN(command);
         }
+
         else if (cmd == "reset")
         {
             board->LoadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         }
+
         else if (cmd == "board")
         {
             PrintBoard();
         }
+
         else if (cmd == "bot")
         {
             const int min_depth = 3;
@@ -99,13 +86,18 @@ void Console::run()
 
             std::cout << "[BOT] Has decided to play " << MoveToString(move.move) << std::endl;
             board->MakeMove(move.move);
+
+            // Prints "Check!", "Checkmate!", "Stalemate!", or nothing.
+            PrintEndgame();
             continue;
         }
+
         else if (cmd == "eval")
         {
             Evaluation eval = bot->Evaluate();
-            std::cout << "Current position evaluation: " << eval << "." << std::endl;
+            std::cout << "Current position evaluation (quiescense search): " << eval << "." << std::endl;
         }
+
         else if (cmd == "train")
         {
             DurationMs original_timelimit = bot->GetTimeLimit();
@@ -127,6 +119,7 @@ void Console::run()
             // Reset to the original time limit
             bot->SetTimeLimit(original_timelimit);
         }
+
         else if (cmd == "timelimit")
         {
             std::string timelimit_str = GetCommand("How long would you like the bot to think (seconds)? ");
@@ -136,16 +129,41 @@ void Console::run()
             std::cout << "Set [BOT] time limit to " << timelimit_ms << "ms." << std::endl;
             bot->SetTimeLimit(DurationMs(timelimit_ms));
         }
+
         else if (cmd == "exit")
         {
             break;
         }
+
         else
         {
             std::cout << "Invalid command: `" << cmd << "`" << std::endl;
         }
 
     } while (1);
+}
+
+
+void Console::PrintEndgame()
+{
+    if (board->IsCheckMate())
+    {
+        // Checkmate outranks check.
+        std::cout << "Checkmate!" << std::endl;
+        return;
+    }
+
+    if (board->IsStaleMate())
+    {
+        // Checkmate outranks check.
+        std::cout << "Stalemate!" << std::endl;
+        return;
+    }
+
+    if (board->IsCheck())
+    {
+        std::cout << "Check!" << std::endl;
+    }
 }
 
 
@@ -278,3 +296,4 @@ void Console::PrintBoard()
     std::cout << "  +------------------------+" << std::endl;
     std::cout << "  | a  b  c  d  e  f  g  h |" << std::endl;
 }
+

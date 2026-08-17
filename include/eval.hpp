@@ -25,11 +25,6 @@ class ChessBoardEvaluation
 
     Square __fix_pst_square(Square square);
 
-    Evaluation EvaluatePieceValues();
-    Evaluation EvaluatePSTs();
-    Evaluation ComputeMopupBonus();
-    Evaluation EvaluateMobility();
-
     inline int GetEndgamePhase()
     {
         int material = 0;
@@ -70,6 +65,12 @@ public:
 
     // Move ordering.
     Evaluation MoveOrderScore(const Move& move);
+
+    // Evaluation functions
+    Evaluation EvaluatePieceValues();
+    Evaluation EvaluatePSTs();
+    Evaluation ComputeMopupBonus();
+    Evaluation EvaluateMobility();
 
     // Position evaluation.
     Evaluation EvaluatePosition();

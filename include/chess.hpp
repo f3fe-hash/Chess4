@@ -249,6 +249,8 @@ public:
     std::vector<Move> GetLegalMoves();
     std::vector<Move> GetLegalCaptures();
 
+    void GetNumLegalMovesAndCaptures(size_t& moves_count, size_t& captures_count);
+
     bool IsLegalMove(Move move);
 
     bool IsCheck();

@@ -27,6 +27,9 @@ class Console
 
     void PrintBoard();
 
+    // Prints check / checkmate / stalemate
+    void PrintEndgame();
+
     std::string MoveToString(Move move);
 
     std::string GetCommand(const std::string& prompt = ">>> ");

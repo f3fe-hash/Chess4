@@ -2,7 +2,7 @@
 #include <algorithm>
 
 
-const int CHECKMATE_SCORE = 1000000000;
+const int CHECKMATE_SCORE = 1e+5;
 
 
 // Piece values
@@ -13,10 +13,12 @@ const int ROOK_VALUE    = 500;
 const int QUEEN_VALUE   = 900;
 
 // Evaluation multipliers
-const float PIECE_VALUE_MULTIPLIER = 0.5;
-const float PST_EVAL_MULTIPLIER    = 1.2;
-const float MOP_UP_MULTIPLIER      = 1.3;
-const float MOBILITY_MULTIPLIER    = 1.1;
+const float PIECE_VALUE_MULTIPLIER      = 0.5;
+const float PST_EVAL_MULTIPLIER         = 1.2;
+const float MOP_UP_MULTIPLIER           = 1.3;
+const float MOBILITY_MULTIPLIER         = 0.7;
+const float MOBILITY_MOVE_MULTIPLIER    = 2;
+const float MOBILITY_CAPTURE_MULTIPLIER = 4;
 
 
 //
@@ -429,7 +431,13 @@ Evaluation ChessBoardEvaluation::ComputeMopupBonus()
 
 Evaluation ChessBoardEvaluation::EvaluateMobility()
 {
-    
+    size_t num_moves;
+    size_t num_captures;
+    board->GetNumLegalMovesAndCaptures(num_moves, num_captures);
+
+    return
+        (num_moves * MOBILITY_MOVE_MULTIPLIER) +
+        (num_captures * MOBILITY_CAPTURE_MULTIPLIER);
 }
 
 
@@ -483,11 +491,10 @@ Evaluation ChessBoardEvaluation::EvaluatePosition()
 
     board->SetTurnColor(TURN_WHITE);
 
-    eval_white += PIECE_VALUE_MULTIPLIER * EvaluatePieceValues();
-    eval_white += PST_EVAL_MULTIPLIER * EvaluatePSTs();
+    eval_white += PIECE_VALUE_MULTIPLIER    * EvaluatePieceValues();
+    eval_white += PST_EVAL_MULTIPLIER       * EvaluatePSTs();
+    eval_white += MOBILITY_MULTIPLIER       * EvaluateMobility();
 
-    //if (board->IsCheckMate())
-    //    eval_white -= 100000;
     if (board->IsCheck())
         eval_white -= 100;
 
@@ -497,11 +504,10 @@ Evaluation ChessBoardEvaluation::EvaluatePosition()
 
     board->SetTurnColor(TURN_BLACK);
 
-    eval_black += PIECE_VALUE_MULTIPLIER * EvaluatePieceValues();
-    eval_black += PST_EVAL_MULTIPLIER * EvaluatePSTs();
+    eval_black += PIECE_VALUE_MULTIPLIER    * EvaluatePieceValues();
+    eval_black += PST_EVAL_MULTIPLIER       * EvaluatePSTs();
+    eval_black += MOBILITY_MULTIPLIER       * EvaluateMobility();
 
-    //if (board->IsCheckMate())
-    //    eval_black -= 100000;
     if (board->IsCheck())
         eval_black -= 100;
 
@@ -510,8 +516,12 @@ Evaluation ChessBoardEvaluation::EvaluatePosition()
 
     Evaluation base = eval_white - eval_black;
 
-    base +=
-        MOP_UP_MULTIPLIER * ComputeMopupBonus();
+    // Mop-up is more useful in the endgame, and is really expensive to calculate.
+    if (GetEndgamePhase() > 128) // [0-255]
+    {
+        base +=
+            MOP_UP_MULTIPLIER * ComputeMopupBonus();
+    }
 
     return base;
 }
@@ -521,13 +531,6 @@ Evaluation ChessBoardEvaluation::QuiesenceSearchMain(int depth, Evaluation alpha
 {
     // Evaluation a position only when all captures have been made.
 
-    // Get legal captures.
-    std::vector<Move> captures = board->GetLegalCaptures();
-
-    // No more captures.
-    if (captures.size() == 0)
-        return EvaluatePosition();
-
     // Checkmate.
     if (board->IsCheckMate())
         return board->GetTurnColor() ? -CHECKMATE_SCORE : CHECKMATE_SCORE;
@@ -535,6 +538,44 @@ Evaluation ChessBoardEvaluation::QuiesenceSearchMain(int depth, Evaluation alpha
     // Stalemate.
     if (board->IsStaleMate())
         return 0;
+
+    // We CAN do nothing, but quiescence search only looks at
+    // captures, so we need to evaluate doing nothing.
+    Evaluation stand_pat = EvaluatePosition();
+    if (board->GetTurnColor() == TURN_WHITE)
+    {
+        if (stand_pat >= beta)
+            return stand_pat;
+
+        alpha = std::max(alpha, stand_pat);
+    }
+    else
+    {
+        if (stand_pat <= alpha)
+            return stand_pat;
+
+        beta = std::min(beta, stand_pat);
+    }
+
+    // Max depth.
+    if (depth == 0)
+        return stand_pat;
+
+    // Get legal captures.
+    std::vector<Move> captures = board->GetLegalCaptures();
+
+    if (board->IsCheck())
+    {
+        // We are in check!
+        // Instead of captures, evaluate checks.
+        captures = board->GetLegalMoves();
+    }
+    else
+    {
+        // No more captures.
+        if ((captures.size() == 0))
+            return EvaluatePosition();
+    }
     
     // Max depth.
     if (depth == 0)
@@ -542,7 +583,7 @@ Evaluation ChessBoardEvaluation::QuiesenceSearchMain(int depth, Evaluation alpha
     
 
     bool maximizing = board->GetTurnColor() == TURN_WHITE;
-    Evaluation best_eval = maximizing ? INT_MIN : INT_MAX;
+    Evaluation best_eval = EvaluatePosition();
 
     for (Move capture : captures)
     {
@@ -555,21 +596,13 @@ Evaluation ChessBoardEvaluation::QuiesenceSearchMain(int depth, Evaluation alpha
 
         if (maximizing)
         {
-            if (eval > best_eval)
-            {
-                best_eval = eval;
-            }
-
-            alpha = std::max(alpha, eval);
+            best_eval   = std::max(best_eval, eval);
+            alpha       = std::max(alpha, eval);
         }
         else
         {
-            if (eval < best_eval)
-            {
-                best_eval = eval;
-            }
-
-            beta = std::min(beta, eval);
+            best_eval   = std::min(best_eval, eval);
+            beta        = std::min(beta, eval);
         }
 
         // Prune.
