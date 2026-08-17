@@ -49,9 +49,6 @@ class ChessBot
     Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply);
     Evaluation SearchCore(Evaluation& alpha, Evaluation& beta, int depth, int ply, Move move, int move_idx);
 
-    bool CompareMoves(const Move& move1, const Move& move2);
-    void SortMoves(std::vector<Move>& moves);
-
     int DepthExtension();
 
 public:
@@ -64,6 +61,12 @@ public:
 
     inline Evaluation Evaluate()
     { return evaluator.QuiesenceSearch(10); }
+
+    inline Evaluation EvaluateRaw()
+    { return evaluator.EvaluatePosition(); }
+
+    inline size_t GetTranspositionTableSize()
+    { return transposition_table->GetNumEntries(); }
 
     MoveResult Search(int min_depth, int max_depth);
 };

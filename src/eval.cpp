@@ -2,21 +2,21 @@
 #include <algorithm>
 
 
-const int CHECKMATE_SCORE = 1e+5;
+const Evaluation CHECKMATE_SCORE = 1e+5;
 
 
 // Piece values
-const int PAWN_VALUE    = 100;
-const int KNIGHT_VALUE  = 300;
-const int BISHOP_VALUE  = 320;
-const int ROOK_VALUE    = 500;
-const int QUEEN_VALUE   = 900;
+const Evaluation PAWN_VALUE    = 100;
+const Evaluation KNIGHT_VALUE  = 300;
+const Evaluation BISHOP_VALUE  = 320;
+const Evaluation ROOK_VALUE    = 500;
+const Evaluation QUEEN_VALUE   = 900;
 
 // Evaluation multipliers
-const float PIECE_VALUE_MULTIPLIER      = 0.5;
+const float PIECE_VALUE_MULTIPLIER      = 1;
 const float PST_EVAL_MULTIPLIER         = 1.2;
 const float MOP_UP_MULTIPLIER           = 1.3;
-const float MOBILITY_MULTIPLIER         = 0.7;
+const float MOBILITY_MULTIPLIER         = 0.9;
 const float MOBILITY_MOVE_MULTIPLIER    = 2;
 const float MOBILITY_CAPTURE_MULTIPLIER = 4;
 
@@ -456,7 +456,7 @@ static inline Evaluation PieceValue(Piece piece)
 }
 
 
-Evaluation ChessBoardEvaluation::MoveOrderScore(const Move& move)
+Evaluation ChessBoardEvaluation::MoveOrderScore(const Move& move, int depth)
 {
     if (move.captured == NULL_PIECE)
         return 0;
@@ -465,16 +465,46 @@ Evaluation ChessBoardEvaluation::MoveOrderScore(const Move& move)
     ZobristHash key = board->GetZobristHash();
     if (transposition_table->keyIsStored(key))
     {
-        // It is stored! If this is the stored move, give it a higher ranking.
+        // It is stored!
+        // Make sure it at a higher depth than the current one.
+        // If this is the stored move, give it a higher ranking.
         TranspositionTableEntry entry = transposition_table->getKey(key);
+        if (entry.depth < depth)
+            goto main;
+
+        // If this is the stored move, give it a higher ranking.
         if (entry.best_move == move)
             return 2000;
     }
+
+main:
 
     Evaluation victim = PieceValue(move.captured);
     Evaluation attacker = PieceValue(move.moved);
 
     return (victim * 10) - attacker;
+}
+
+
+bool ChessBoardEvaluation::CompareMoves(
+    const Move& move1,
+    const Move& move2,
+    int depth)
+{
+    return MoveOrderScore(move1, depth) > MoveOrderScore(move2, depth);
+}
+
+
+void ChessBoardEvaluation::SortMoves(std::vector<Move>& moves, int depth)
+{
+    std::sort(
+        moves.begin(),
+        moves.end(),
+        [this, depth](const Move& a, const Move& b)
+        {
+            return CompareMoves(a, b, depth);
+        }
+    );
 }
 
 
@@ -540,7 +570,7 @@ Evaluation ChessBoardEvaluation::QuiesenceSearchMain(int depth, Evaluation alpha
         return 0;
 
     // We CAN do nothing, but quiescence search only looks at
-    // captures, so we need to evaluate doing nothing.
+    // captures, so we need to evaluate doing nothing first.
     Evaluation stand_pat = EvaluatePosition();
     if (board->GetTurnColor() == TURN_WHITE)
     {
@@ -559,7 +589,7 @@ Evaluation ChessBoardEvaluation::QuiesenceSearchMain(int depth, Evaluation alpha
 
     // Max depth.
     if (depth == 0)
-        return stand_pat;
+       return stand_pat;
 
     // Get legal captures.
     std::vector<Move> captures = board->GetLegalCaptures();
@@ -567,27 +597,34 @@ Evaluation ChessBoardEvaluation::QuiesenceSearchMain(int depth, Evaluation alpha
     if (board->IsCheck())
     {
         // We are in check!
-        // Instead of captures, evaluate checks.
+        // Instead of captures, evaluate all moves.
         captures = board->GetLegalMoves();
+
+        // because we are searching more moves, decrease the depth
+        depth = std::max(depth - 1, 1);
     }
     else
     {
         // No more captures.
-        if ((captures.size() == 0))
+        if (captures.size() == 0)
             return EvaluatePosition();
-    }
-    
-    // Max depth.
-    if (depth == 0)
-        return EvaluatePosition();
+    } 
     
 
     bool maximizing = board->GetTurnColor() == TURN_WHITE;
-    Evaluation best_eval = EvaluatePosition();
+    Evaluation best_eval = maximizing ? INT_MIN : INT_MAX;
 
-    for (Move capture : captures)
+    // Always read from the transposition table (depth 0)
+    SortMoves(captures, 0);
+
+    for (int capture_idx = 0; capture_idx < static_cast<int>(captures.size()); capture_idx++)
     {
+        Move capture = captures[capture_idx];
+
         board->MakeMove(capture);
+
+        if (capture_idx > 3)
+            depth -= 1;
 
         Evaluation eval = QuiesenceSearch(depth - 1);
 

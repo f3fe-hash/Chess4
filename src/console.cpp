@@ -85,6 +85,7 @@ void Console::run()
                 << std::endl;
 
             std::cout << "[BOT] Has decided to play " << MoveToString(move.move) << std::endl;
+            std::cout << "[TT] Transposition table has " << bot->GetTranspositionTableSize() << " entries." << std::endl;
             board->MakeMove(move.move);
 
             // Prints "Check!", "Checkmate!", "Stalemate!", or nothing.
@@ -94,8 +95,8 @@ void Console::run()
 
         else if (cmd == "eval")
         {
-            Evaluation eval = bot->Evaluate();
-            std::cout << "Current position evaluation (quiescense search): " << eval << "." << std::endl;
+            std::cout << "Current position evaluation (quiesence search): " << bot->Evaluate() << "." << std::endl;
+            std::cout << "Current position evaluation (raw): " << bot->EvaluateRaw() << "." << std::endl;
         }
 
         else if (cmd == "train")
@@ -115,6 +116,7 @@ void Console::run()
             bot->Search(5, 100);
 
             std::cout << "Done." << std::endl;
+            std::cout << "[TT] Transposition table has " << bot->GetTranspositionTableSize() << " entries." << std::endl;
 
             // Reset to the original time limit
             bot->SetTimeLimit(original_timelimit);

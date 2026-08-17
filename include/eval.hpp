@@ -11,12 +11,12 @@
 
 using Evaluation = float;
 
-extern const int PAWN_VALUE;
-extern const int KNIGHT_VALUE;
-extern const int BISHOP_VALUE;
-extern const int ROOK_VALUE;
-extern const int QUEEN_VALUE;
-extern const int CHECKMATE_SCORE;
+extern const Evaluation PAWN_VALUE;
+extern const Evaluation KNIGHT_VALUE;
+extern const Evaluation BISHOP_VALUE;
+extern const Evaluation ROOK_VALUE;
+extern const Evaluation QUEEN_VALUE;
+extern const Evaluation CHECKMATE_SCORE;
 
 class ChessBoardEvaluation
 {
@@ -56,6 +56,11 @@ class ChessBoardEvaluation
         });
     }
 
+    bool CompareMoves(
+        const Move& move1,
+        const Move& move2,
+        int depth);
+
     Evaluation QuiesenceSearchMain(int depth, Evaluation alpha, Evaluation beta);
 
 public:
@@ -63,8 +68,9 @@ public:
     ChessBoardEvaluation(std::shared_ptr<ChessBoard> _board, std::shared_ptr<TranspositionTable> tt_);
     ~ChessBoardEvaluation();
 
-    // Move ordering.
-    Evaluation MoveOrderScore(const Move& move);
+    // Move ordering / move sorting
+    Evaluation MoveOrderScore(const Move& move, int depth);
+    void SortMoves(std::vector<Move>& moves, int depth);
 
     // Evaluation functions
     Evaluation EvaluatePieceValues();
