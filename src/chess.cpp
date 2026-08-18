@@ -742,6 +742,8 @@ void ChessBoard::MakeMove(Move& move)
     turn ^= 1;
 
     UpdateAttackBitboards();
+
+    history.push_back(zobrist_hash);
 }
 
 
@@ -928,6 +930,8 @@ void ChessBoard::UndoMove(Move move)
     turn ^= 1;
 
     UpdateAttackBitboards();
+
+    (void) history.pop_back();
 }
 
 
@@ -1720,6 +1724,33 @@ bool ChessBoard::IsStaleMate()
 
     std::vector<Move> legal = GetLegalMoves();
     return legal.empty();
+}
+
+
+bool ChessBoard::IsThreeFoldRepition()
+{
+    // TODO: Optimize
+
+    std::unordered_map<ZobristHash, size_t> positions_map;
+    std::vector<ZobristHash> positions;
+
+    for (size_t i = 0; i < static_cast<size_t>(history.size()); i++)
+    {
+        size_t prev = 0;
+        if (positions_map.contains(history[i]))
+            prev = positions_map[history[i]];
+        
+        positions_map.insert_or_assign(history[i], prev + 1);
+        positions.push_back(history[i]);
+    }
+
+    for (const ZobristHash& position : positions)
+    {
+        if (positions_map[position] >= 3)
+            return true;
+    }
+
+    return false;
 }
 
 

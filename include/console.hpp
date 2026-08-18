@@ -24,14 +24,7 @@ class Console
 
     Move ParseMove(std::string move_str);
     void ParseFEN(std::string fen_str);
-
-    void PrintBoard();
-
-    // Prints check / checkmate / stalemate
-    void PrintEndgame();
-
-    std::string MoveToString(Move move);
-
+ 
     std::string GetCommand(const std::string& prompt = ">>> ");
     std::vector<std::string> SplitCommand(std::string str);
 
@@ -39,5 +32,11 @@ public:
     Console(std::shared_ptr<ChessBoard> board, std::shared_ptr<ChessBot> bot);
     ~Console();
 
+    std::string MoveToString(Move move);
+    void PrintBoard();
+
+    // Prints check / checkmate / stalemate
+    void PrintEndgame();
+ 
     void run();
 };

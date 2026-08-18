@@ -115,26 +115,42 @@ Evaluation ChessBot::SearchCore(
 
     int extension = DepthExtension(move);
 
+    // LMR values
+#define LMR_LOW -1 // Low
+#define LMR_MED -2 // Medium
+#define LMR_HIG -4 // High
+#define LMR_EXT -6 // Extreme
+
+
     bool endgame = evaluator.IsEndgame();
-    if (extension == 0)
+    if (extension <= 1)
     {
         if (!endgame)
         {
-            if (move_idx >= 35)
-                extension = -3;
+            if (move_idx >= 60)
+                extension += LMR_EXT;
+            else if (move_idx >= 35)
+                extension += LMR_HIG;
             else if (move_idx >= 15)
-                extension = -2;
+                extension += LMR_MED;
             else if (move_idx >= 5)
-                extension = -1;
+                extension += LMR_LOW;
         }
         else
         {
-            // Much more conservative LMR.
-            if (move_idx >= 20)
-                extension = -1;
+            // Much more conservative LMR for endgames.
+            if (move_idx >= 80)
+                extension += LMR_EXT;
+            else if (move_idx >= 50)
+                extension += LMR_HIG;
+            else if (move_idx >= 30)
+                extension += LMR_MED;
+            else if (move_idx >= 20)
+                extension += LMR_LOW;
         }
     }
 
+    // Ensure depth doesn't go negative.
     int search_depth =
         std::max(0, depth - 1 + extension);
 
@@ -342,7 +358,7 @@ Evaluation ChessBot::MainSearch(
     bool maximizing = board->GetTurnColor() == TURN_WHITE;
 
     // --------------------------------------------------------
-    // Checkmate / stalemate.
+    // Checkmate / draws.
     // --------------------------------------------------------
 
     if (moves.empty())
@@ -379,18 +395,22 @@ Evaluation ChessBot::MainSearch(
         return 0;
     }
 
+    // 3-fold repition
+    if (board->IsThreeFoldRepition())
+        return 0;
+
     // --------------------------------------------------------
     // Leaf evaluation.
     // --------------------------------------------------------
 
     if (depth <= 0)
-        return evaluator.QuiescenceSearch();
+        return evaluator.EvaluatePosition();
 
     // --------------------------------------------------------
     // Position key.
     // --------------------------------------------------------
 
-    const uint64_t key = GetPositionKey();
+    const ZobristHash key = GetPositionKey();
 
     // --------------------------------------------------------
     // Transposition-table lookup.
@@ -569,3 +589,5 @@ Evaluation ChessBot::MainSearch(
 // Endgame fens
 // fen 8/3P4/8/8/8/6K1/8/7k
 // fen 8/8/8/8/8/3k4/8/KR6/
+
+

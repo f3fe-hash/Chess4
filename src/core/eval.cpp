@@ -1,14 +1,18 @@
 #include "core/eval.hpp"
 #include <algorithm>
 
+//
+//  Evaluation multipliers
+// 
 
-// Evaluation multipliers
-const float PIECE_VALUE_MULTIPLIER      = 1;
-const float PST_EVAL_MULTIPLIER         = 1.2;
-const float MOP_UP_MULTIPLIER           = 1.3;
-const float MOBILITY_MULTIPLIER         = 0.9;
-const float MOBILITY_MOVE_MULTIPLIER    = 2;
-const float MOBILITY_CAPTURE_MULTIPLIER = 4;
+const float PIECE_VALUE_MULTIPLIER      = 0.5; // Keeping pieces safe
+const float PST_EVAL_MULTIPLIER         = 2.4; // Piece positioning
+const float MOP_UP_MULTIPLIER           = 1.4; // Endgames: pus king to edges
+
+// Note: captures evaluation are ON TOP of generic moves.
+const float MOBILITY_MULTIPLIER         = 0.9; // make sure you have plenty legal moves
+const float MOBILITY_MOVE_MULTIPLIER    = 2; // Generic moves don't count for much.
+const float MOBILITY_CAPTURE_MULTIPLIER = 2; // Captures are better than generic moves.
 
 
 //
@@ -16,28 +20,33 @@ const float MOBILITY_CAPTURE_MULTIPLIER = 4;
 //
 
 
+// Try to get the center pawns out of the way, and keep the knight squares
+// open.
 const int PAWN_PST[64] = {
      0,  0,  0,  0,  0,  0,  0,  0,
-    90, 90, 90, 90, 90, 90, 90, 90,
     80, 80, 80, 80, 80, 80, 80, 80,
     50, 50, 50, 50, 50, 50, 50, 50,
-    30, 30, 30, 45, 45, 30, 30, 30,
-    20, 20, 20, 25, 25, 20, 20, 20,
+    40, 40, 40, 50, 50, 40, 40, 40,
+    25, 25, 15, 45, 45, 15, 25, 25,
+    10, 10, 10, 15, 15, 10, 10, 10,
      5,  5,  5,  5,  5,  5,  5,  5,
      0,  0,  0,  0,  0,  0,  0,  0
 };
 
+// For some reason, the bot keeps wanting to move to the edges IMMEDIATELY
+// in the opening, so prevent that.
 const int KNIGHT_PST[64] = {
     -50, -40, -30, -30, -30, -30, -40, -50,
     -40, -20,   0,   5,   5,   0, -20, -40,
-    -30,   5,  10,  15,  15,  10,   5, -30,
-    -30,   0,  15,  20,  20,  15,   0, -30,
-    -30,   5,  15,  20,  20,  15,   5, -30,
-    -30,   0,  10,  15,  15,  10,   0, -30,
+    -30,   5,   8,  11,  11,   8,   5, -30,
+    -30,   0,  11,  15,  15,  11,   0, -30,
+    -30,   5,  11,  15,  15,  11,   5, -30,
+    -70,   0,   8,  15,  15,   8,   0, -70,
     -40, -20,   0,   0,   0,   0, -20, -40,
-    -50, -40, -30, -30, -30, -30, -40, -50
+    -50, -10, -30, -30, -30, -30, -10, -50
 };
 
+// TODO: Tweak / edit
 const int BISHOP_PST[64] = {
     -20, -10, -10, -10, -10, -10, -10, -20,
     -10,   0,   0,   0,   0,   0,   0, -10,
@@ -49,6 +58,7 @@ const int BISHOP_PST[64] = {
     -20, -10, -10, -10, -10, -10, -10, -20
 };
 
+// Keep control of the center file, and castle.
 const int ROOK_PST[64] = {
       0,   0,   0,   5,   5,   0,   0,   0,
      -5,   0,   0,   0,   0,   0,   0,  -5,
@@ -56,10 +66,11 @@ const int ROOK_PST[64] = {
      -5,   0,   0,   0,   0,   0,   0,  -5,
      -5,   0,   0,   0,   0,   0,   0,  -5,
      -5,   0,   0,   0,   0,   0,   0,  -5,
-      5,  10,  10,  10,  10,  10,  10,   5,
-      0,   0,   0,   0,   0,   0,   0,   0
+      5,   5,   5,   5,   5,   5,   5,   5,
+      0,   0,   0,  20,  10,  15,   0,   0
 };
 
+// Keep away from corners, for maximum attack space
 const int QUEEN_PST[64] = {
     -20, -10, -10,  -5,  -5, -10, -10, -20,
     -10,   0,   0,   0,   0,   0,   0, -10,
@@ -71,6 +82,7 @@ const int QUEEN_PST[64] = {
     -20, -10, -10,  -5,  -5, -10, -10, -20
 };
 
+// Early game: Castle
 const int KING_PST[64] = {
     -30, -40, -40, -50, -50, -40, -40, -30,
     -30, -40, -40, -50, -50, -40, -40, -30,
@@ -79,9 +91,10 @@ const int KING_PST[64] = {
     -20, -30, -30, -40, -40, -30, -30, -20,
     -10, -20, -20, -20, -20, -20, -20, -10,
      20,  20,   0,   0,   0,   0,  20,  20,
-     20,  30,  10,   0,   0,  10,  30,  20
+     20,  10,  30,   0,   0,  10,  30,  20
 };
 
+// Endgame: Do something!
 const int KING_ENDGAME_PST[64] = {
     -50, -40, -30, -20, -20, -30, -40, -50,
     -40, -20, -10,   0,   0, -10, -20, -40,
@@ -125,11 +138,12 @@ Evaluation ChessBoardEvaluator::EvaluatePieceValues()
 
     Evaluation eval = 0;
 
-    eval += PAWN_VALUE * board->CountPawns();
-    eval += KNIGHT_VALUE * board->CountKnights();
-    eval += BISHOP_VALUE * board->CountBishops();
-    eval += ROOK_VALUE * board->CountRooks();
-    eval += QUEEN_VALUE * board->CountQueens();
+    SetEndgamePhase(GetEndgamePhase());
+    eval += GetPawnValue() * board->CountPawns();
+    eval += GetKnightValue() * board->CountKnights();
+    eval += GetBishopValue() * board->CountBishops();
+    eval += GetRookValue() * board->CountRooks();
+    eval += GetQueenValue() * board->CountQueens();
 
     return eval;
 }
@@ -222,26 +236,27 @@ Evaluation ChessBoardEvaluator::ComputeMopupBonus()
 
         int value = 0;
 
+        SetEndgamePhase(GetEndgamePhase());
         switch (type)
         {
             case PIECE_TYPE_PAWN:
-                value = PAWN_VALUE;
+                value = GetPawnValue();
                 break;
 
             case PIECE_TYPE_KNIGHT:
-                value = KNIGHT_VALUE;
+                value = GetKnightValue();
                 break;
 
             case PIECE_TYPE_BISHOP:
-                value = BISHOP_VALUE;
+                value = GetBishopValue();
                 break;
 
             case PIECE_TYPE_ROOK:
-                value = ROOK_VALUE;
+                value = GetRookValue();
                 break;
 
             case PIECE_TYPE_QUEEN:
-                value = QUEEN_VALUE;
+                value = GetQueenValue();
                 break;
 
             case PIECE_TYPE_KING:
@@ -310,6 +325,8 @@ Evaluation ChessBoardEvaluator::ComputeMopupBonus()
 
     Evaluation white_bonus = 0;
     Evaluation black_bonus = 0;
+
+    const Evaluation ROOK_VALUE = GetRookValue();
 
     //
     // White is winning with a major piece.
@@ -565,4 +582,5 @@ Evaluation ChessBoardEvaluator::QuiescenceSearch()
 
     return QuiescenceSearchMain(alpha, beta, 10);
 }
+
 

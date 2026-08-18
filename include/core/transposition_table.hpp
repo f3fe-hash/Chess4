@@ -50,11 +50,11 @@ class TranspositionTable
 
     struct Bucket
     {
-        Entry entries[4];
+        Entry entries[8];
     };
 
     // Zobrist hash -> Transposition entry data
-    Bucket transposition_table[100000];
+    Bucket transposition_table[65535];
 
     void _Store(const ZobristHash& key, const TranspositionTableEntry& entry);
     TranspositionTableEntry _Get(const ZobristHash& key);

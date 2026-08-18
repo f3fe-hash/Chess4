@@ -3,13 +3,14 @@
 
 Evaluation MoveOrder::PieceValue(Piece piece)
 {
+    // Uses previously set endgame phase.
     switch (piece & 0x07)
     {
-        case PIECE_TYPE_PAWN:   return PAWN_VALUE;
-        case PIECE_TYPE_KNIGHT: return KNIGHT_VALUE;
-        case PIECE_TYPE_BISHOP: return BISHOP_VALUE;
-        case PIECE_TYPE_ROOK:   return ROOK_VALUE;
-        case PIECE_TYPE_QUEEN:  return QUEEN_VALUE;
+        case PIECE_TYPE_PAWN:   return GetPawnValue();
+        case PIECE_TYPE_KNIGHT: return GetKnightValue();
+        case PIECE_TYPE_BISHOP: return GetBishopValue();
+        case PIECE_TYPE_ROOK:   return GetRookValue();
+        case PIECE_TYPE_QUEEN:  return GetQueenValue();
         case PIECE_TYPE_KING:   return 1500;
         default:                return 0;
     }
@@ -43,7 +44,7 @@ Evaluation MoveOrder::MoveOrderScore(
     // value will make it choose quiet-er moves. Of course, this is just for
     // ranking. It is not guarrenteed to choose the higher ranked moves, but
     // it will see them earlier on.
-    score += victim * 1.3 - attacker;
+    score += victim * 5.4 - attacker;
 
     return score;
 }
@@ -86,4 +87,5 @@ void MoveOrder::OrderMoves(
         }
     );
 }
+
 

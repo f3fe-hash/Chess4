@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include <vector>
+#include <unordered_map>
 #include <string>
 
 #define A1 0
@@ -197,6 +198,8 @@ class ChessBoard
 
     uint64_t zobrist_hash;
 
+    std::vector<ZobristHash> history;
+
     void UpdateOccupancyBitboards();
     void UpdateAttackBitboards();
 
@@ -245,6 +248,7 @@ public:
     bool IsLegalMove(Move move);
 
     bool IsCheck();
+    bool IsThreeFoldRepition();
     bool IsCheckMate();
     bool IsStaleMate();
 

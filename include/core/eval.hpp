@@ -62,10 +62,10 @@ public:
     {
         int material = 0;
 
-        material += board->CountQueens()  * QUEEN_VALUE;
-        material += board->CountRooks()   * ROOK_VALUE;
-        material += board->CountBishops() * BISHOP_VALUE;
-        material += board->CountKnights() * KNIGHT_VALUE;
+        material += board->CountQueens()  * GetQueenValue();
+        material += board->CountRooks()   * GetRookValue();
+        material += board->CountBishops() * GetBishopValue();
+        material += board->CountKnights() * GetKnightValue();
 
         // 0 = middlegame
         // 256 = pure king/pawn endgame

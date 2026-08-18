@@ -2,7 +2,7 @@
 
 
 // If this is updated, please also update the size of TranspositionTable::transposition_table
-constexpr int BUCKETS = 100000;
+constexpr int BUCKETS = 65535;
 
 
 TranspositionTable::TranspositionTable()
@@ -13,7 +13,7 @@ void TranspositionTable::_Store(
     const ZobristHash& key,
     const TranspositionTableEntry& entry)
 {
-    const uint64_t bucket_idx = key % 100000;
+    const uint64_t bucket_idx = key % BUCKETS;
     Bucket& bucket = transposition_table[bucket_idx];
 
     // First look for an existing entry.
@@ -38,7 +38,7 @@ void TranspositionTable::_Store(
 TranspositionTableEntry TranspositionTable::_Get(
     const ZobristHash& key)
 {
-    const uint64_t bucket_idx = key % 100000;
+    const uint64_t bucket_idx = key % BUCKETS;
     const Bucket& bucket = transposition_table[bucket_idx];
 
     for (const Entry& tt_entry : bucket.entries)
@@ -53,7 +53,7 @@ TranspositionTableEntry TranspositionTable::_Get(
 
 bool TranspositionTable::_Contains(const ZobristHash& key)
 {
-    const uint64_t bucket_idx = key % 100000;
+    const uint64_t bucket_idx = key % BUCKETS;
     const Bucket& bucket = transposition_table[bucket_idx];
 
     for (const Entry& tt_entry : bucket.entries)
