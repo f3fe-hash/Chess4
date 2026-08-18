@@ -1,5 +1,5 @@
-//#define CONSOLE_APP
-#define MATCH_TEST
+#define CONSOLE_APP
+//#define MATCH_TEST
 
 #include <iostream>
 
@@ -14,20 +14,25 @@ std::shared_ptr<ChessBot> bot1, bot2;
 int main()
 {
     board = std::make_shared<ChessBoard>();
+    board->LoadFEN("rnbqkbnr/pppppp1p/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
+#ifdef CONSOLE_APP
     bot1 = std::make_shared<ChessBot>(board);
-    bot2 = std::make_shared<ChessBot>(board);
     
     Console console(board, bot1);
-    bot1->SetTimeLimit(DurationMs(10000));
-    bot2->SetTimeLimit(DurationMs(10000));
+    bot1->SetTimeLimit(DurationMs(100));
 
-    board->LoadFEN("rnbqkbnr/pppppp1p/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-#ifdef CONSOLE_APP
     console.run();
 #endif
 
 #ifdef MATCH_TEST
+    bot1 = std::make_shared<ChessBot>(board);
+    bot2 = std::make_shared<ChessBot>(board);
+    
+    Console console(board, bot1);
+    bot1->SetTimeLimit(DurationMs(100));
+    bot2->SetTimeLimit(DurationMs(100));
+
     console.PrintBoard();
     while (!(board->IsCheckMate() || board->IsStaleMate() || board->IsThreeFoldRepition()))
     {

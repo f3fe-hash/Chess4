@@ -28,6 +28,14 @@ file(GLOB_RECURSE SRC_FILES src/*.cpp)
 include_directories(include)
 
 # ====================
+# Dependencies
+# ====================
+
+# ncurses
+
+find_package(Curses REQUIRED)
+
+# ====================
 # PGO
 # ====================
 
@@ -90,6 +98,12 @@ endif()
 add_library(chess STATIC ${SRC_FILES})
 
 target_include_directories(chess PUBLIC include)
+
+# ncurses is required by Console.cpp
+
+target_include_directories(chess PRIVATE ${CURSES_INCLUDE_DIR})
+
+target_link_libraries(chess PRIVATE ${CURSES_LIBRARIES})
 
 # ====================
 # Chess executable

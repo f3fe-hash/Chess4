@@ -1,6 +1,6 @@
 #pragma once
 
-#include <iostream>
+#include <ncurses.h>
 #include <string>
 #include <sstream>
 #include <vector>
@@ -33,10 +33,10 @@ public:
     ~Console();
 
     std::string MoveToString(Move move);
-    void PrintBoard();
+    void PrintBoard(const std::string& message);
 
     // Prints check / checkmate / stalemate
-    void PrintEndgame();
+    void PrintEndgame(std::string& message);
  
     void run();
 };
