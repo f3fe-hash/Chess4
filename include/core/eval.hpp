@@ -33,7 +33,10 @@ class ChessBoardEvaluator
         });
     }
 
-    Evaluation QuiesenceSearchMain(int depth, Evaluation alpha, Evaluation beta);
+    Evaluation QuiescenceSearchMain(
+        Evaluation alpha,
+        Evaluation beta,
+        int depth);
 
 public:
     ChessBoardEvaluator() {} // default constructor
@@ -52,7 +55,7 @@ public:
 
     // Position evaluation.
     Evaluation EvaluatePosition();
-    Evaluation QuiesenceSearch(int depth);
+    Evaluation QuiescenceSearch();
 
     // Endgame
     inline int GetEndgamePhase()

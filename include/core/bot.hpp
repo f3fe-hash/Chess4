@@ -62,7 +62,7 @@ public:
     { return time_limit; }
 
     inline Evaluation Evaluate()
-    { return evaluator.QuiesenceSearch(10); }
+    { return evaluator.QuiescenceSearch(); }
 
     inline Evaluation EvaluateRaw()
     { return evaluator.EvaluatePosition(); }

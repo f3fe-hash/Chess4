@@ -1592,6 +1592,10 @@ std::vector<Move> ChessBoard::GetLegalCaptures()
 
     for (Move move : moves)
     {
+        // Only consider captures.
+        if (move.captured == NULL_PIECE)
+            continue;
+        
         MakeMove(move);
 
         // After MakeMove, `turn` is the opponent. We need to check

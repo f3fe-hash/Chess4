@@ -484,147 +484,85 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
 }
 
 
-Evaluation ChessBoardEvaluator::QuiesenceSearchMain(
-    int depth,
+size_t qsearch_nodes;
+
+Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
     Evaluation alpha,
-    Evaluation beta)
+    Evaluation beta,
+    int depth
+)
 {
-    // Terminal positions.
-    if (board->IsCheckMate())
-        return board->GetTurnColor() ? -CHECKMATE_SCORE : CHECKMATE_SCORE;
-
-    if (board->IsStaleMate())
-        return 0;
-
-    const bool maximizing =
-        board->GetTurnColor() == TURN_WHITE;
-
-    // --------------------------------------------------------
-    // If we're in check, we cannot stand-pat.
-    // Search all evasions.
-    // --------------------------------------------------------
+    ++qsearch_nodes;
 
     if (board->IsCheck())
     {
-        if (depth <= 0)
-            return EvaluatePosition();
-
         auto moves = board->GetLegalMoves();
 
         if (moves.empty())
-            return maximizing ? -CHECKMATE_SCORE : CHECKMATE_SCORE;
+            return -CHECKMATE_SCORE;
 
         move_orderer->OrderMoves(moves, 0);
 
-        for (Move& move : moves)
+        for (Move move : moves)
         {
+            // `MakeMove` edits `move` with castling rights, promption flags, etc. for `UndoMove`
             board->MakeMove(move);
 
-            Evaluation eval =
-                QuiesenceSearchMain(
-                    depth - 1,
-                    alpha,
-                    beta);
+            const Evaluation score =
+                QuiescenceSearchMain(alpha, beta, depth - 1);
 
             board->UndoMove(move);
 
-            if (maximizing)
-            {
-                alpha = std::max(alpha, eval);
+            if (score >= beta)
+                return score;
 
-                if (alpha >= beta)
-                    break;
-            }
-            else
-            {
-                beta = std::min(beta, eval);
-
-                if (alpha >= beta)
-                    break;
-            }
+            alpha = std::max(alpha, score);
         }
 
-        return maximizing ? alpha : beta;
+        return alpha;
     }
 
-    // --------------------------------------------------------
-    // Stand pat.
-    // --------------------------------------------------------
-
-    Evaluation stand_pat = EvaluatePosition();
-
-    if (maximizing)
-    {
-        if (stand_pat >= beta)
-            return stand_pat;
-
-        alpha = std::max(alpha, stand_pat);
-    }
-    else
-    {
-        if (stand_pat <= alpha)
-            return stand_pat;
-
-        beta = std::min(beta, stand_pat);
-    }
-
-    // --------------------------------------------------------
-    // Depth limit.
-    // --------------------------------------------------------
+    const Evaluation stand_pat = EvaluatePosition();
 
     if (depth <= 0)
         return stand_pat;
 
-    auto captures = board->GetLegalCaptures();
-
-    if (captures.empty())
+    if (stand_pat >= beta)
         return stand_pat;
+
+    alpha = std::max(alpha, stand_pat);
+
+    auto captures = board->GetLegalCaptures();
 
     move_orderer->OrderMoves(captures, 0);
 
-    // --------------------------------------------------------
-    // Search captures.
-    // --------------------------------------------------------
-
-    for (int i = 0; i < static_cast<int>(captures.size()); ++i)
+    for (Move move : captures)
     {
-        Move move = captures[i];
-
+        // `MakeMove` edits `move` with castling rights, promption flags, etc. for `UndoMove`
         board->MakeMove(move);
 
-        Evaluation eval =
-            QuiesenceSearchMain(
-                depth - 1,
-                alpha,
-                beta);
+        const Evaluation score =
+            QuiescenceSearchMain(alpha, beta, depth - 1);
 
         board->UndoMove(move);
 
-        if (maximizing)
-        {
-            alpha = std::max(alpha, eval);
+        if (score >= beta)
+            return score;
 
-            if (alpha >= beta)
-                break;
-        }
-        else
-        {
-            beta = std::min(beta, eval);
-
-            if (alpha >= beta)
-                break;
-        }
+        alpha = std::max(alpha, score);
     }
 
-    return maximizing ? alpha : beta;
+    return alpha;
 }
 
 
-Evaluation ChessBoardEvaluator::QuiesenceSearch(int depth)
+Evaluation ChessBoardEvaluator::QuiescenceSearch()
 {
+    qsearch_nodes = 0;
+
     Evaluation alpha = INT_MIN;
     Evaluation beta = INT_MAX;
 
-    return QuiesenceSearchMain(depth, alpha, beta);
+    return QuiescenceSearchMain(alpha, beta, 10);
 }
 

@@ -10,7 +10,7 @@ Evaluation MoveOrder::PieceValue(Piece piece)
         case PIECE_TYPE_BISHOP: return BISHOP_VALUE;
         case PIECE_TYPE_ROOK:   return ROOK_VALUE;
         case PIECE_TYPE_QUEEN:  return QUEEN_VALUE;
-        case PIECE_TYPE_KING:   return 1000;
+        case PIECE_TYPE_KING:   return 1500;
         default:                return 0;
     }
 }

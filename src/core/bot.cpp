@@ -367,11 +367,11 @@ Evaluation ChessBot::MainSearch(
 
             if (maximizing)
             {
-                return -CHECKMATE_SCORE + ply; // Positive is good for white, negative is bad for white.
+                return -CHECKMATE_SCORE + ply;
             }
             else
             {
-                return CHECKMATE_SCORE - ply; // Negative is good for black, positive is bad for black.
+                return CHECKMATE_SCORE - ply;
             }
         }
 
@@ -384,7 +384,7 @@ Evaluation ChessBot::MainSearch(
     // --------------------------------------------------------
 
     if (depth <= 0)
-        return evaluator.EvaluatePosition();
+        return evaluator.QuiescenceSearch();
 
     // --------------------------------------------------------
     // Position key.
