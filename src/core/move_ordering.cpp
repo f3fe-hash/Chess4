@@ -50,42 +50,43 @@ Evaluation MoveOrder::MoveOrderScore(
 }
 
 
-bool MoveOrder::CompareMoves(
-    const Move& move1,
-    const Move& move2,
-    const Move& tt_move,
-    const int depth)
+void MoveOrder::OrderMoves(std::vector<Move>& moves, int depth)
 {
-    return MoveOrderScore(move1, tt_move, depth) >
-           MoveOrderScore(move2, tt_move, depth);
-}
-
-
-void MoveOrder::OrderMoves(
-    std::vector<Move>& moves,
-    int depth)
-{
-    Move tt_move;
-
+    Move tt_move{};
     ZobristHash key = board->GetZobristHash();
 
     if (transposition_table->keyIsStored(key))
     {
-        TranspositionTableEntry entry =
-            transposition_table->getKey(key);
-
+        auto entry = transposition_table->getKey(key);
         if (entry.depth >= depth)
             tt_move = entry.best_move;
     }
 
-    std::sort(
-        moves.begin(),
-        moves.end(),
-        [this, &tt_move, &depth](const Move& a, const Move& b)
-        {
-            return CompareMoves(a, b, tt_move, depth);
-        }
-    );
+    // Compute score once per move
+    struct Scored {
+        Move m;
+        int score;
+    };
+
+    std::vector<Scored> tmp;
+    tmp.reserve(moves.size());
+
+    for (const Move& m : moves)
+    {
+        // Score should incorporate:
+        int score = MoveOrderScore(m, tt_move, depth);
+        tmp.push_back({m, score});
+    }
+
+    std::sort(tmp.begin(), tmp.end(),
+              [](const Scored& a, const Scored& b) {
+                  return a.score > b.score; // descending
+              });
+
+    // Write back
+    for (size_t i = 0; i < tmp.size(); ++i)
+        moves[i] = tmp[i].m;
 }
+
 
 

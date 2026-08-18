@@ -21,13 +21,6 @@ class MoveOrder
         const Move& tt_move,
         const int depth);
 
-    // Compare 2 moves.
-    bool CompareMoves(
-        const Move& move1,
-        const Move& move2,
-        const Move& tt_move,
-        const int depth);
-
 public:
     MoveOrder() {}
 
