@@ -123,21 +123,12 @@ struct Move
     int8_t flags;
     CastlingRights prev_castling_rights;
 
-    bool operator == (const Move& other)
+    bool operator==(const Move& other) const
     {
-        bool final_ =
-            (from == other.from) &&
-            (to == other.to);
-        
-        // Only compare moved pieces if they are set.
-        if (moved && other.moved)
-            final_ = final_ && (moved == other.moved);
-        
-        // Only compare captured pieces if they are set.
-        if (captured && other.captured)
-            final_ = final_ && (moved == other.moved);
-        
-        return final_;
+        return from == other.from &&
+            to == other.to &&
+            (!moved || !other.moved || moved == other.moved) &&
+            (!captured || !other.captured || captured == other.captured);
     }
 };
 

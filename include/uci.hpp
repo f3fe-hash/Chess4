@@ -1,29 +1,32 @@
 #pragma once
 
-#include "chess.hpp"
-#include "bot.hpp"
+#include <string>
 
-class UCIInterface
+#include "chess.hpp"
+#include "core/bot.hpp"
+
+class UCI
 {
     std::shared_ptr<ChessBoard> board;
     std::shared_ptr<ChessBot> bot;
 
-    std::vector<uint8_t> HandleInit();
-    std::vector<uint8_t> HandleBestmove(std::vector<Move> moves);
+    std::string HandleRawBestmove(std::string cmd);
+    std::string HandleBestmove(std::vector<Move> moves);
 
-    Move StringToMove(std::vector<uint8_t> str);
-    std::vector<uint8_t> MoveToString(const Move& move);
+    Move StringToMove(std::string str);
+    std::string MoveToString(const Move& move);
 
-    inline void AppendVectors(std::vector<uint8_t>& a, const std::vector<uint8_t>& b)
+    inline void AppendString(std::string& a, const std::string& b)
     {
-        // Inserts b to the end of a.
+        a.reserve(a.size() + b.size());
+        a.insert(a.end(), b.begin(), b.end());
     }
 
 public:
-    UCIInterface() {}
-    ~UCIInterface() {}
+    UCI() {}
+    ~UCI() {}
 
-    std::vector<uint8_t> Respond(const std::vector<uint8_t>& request);
+    std::string Respond(const std::string& request);
 };
 
 

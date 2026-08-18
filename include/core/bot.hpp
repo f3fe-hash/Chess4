@@ -11,8 +11,9 @@
 #include <unordered_map>
 
 #include "chess.hpp"
-#include "eval.hpp"
-#include "transposition_table.hpp"
+#include "core/eval.hpp"
+#include "core/transposition_table.hpp"
+#include "core/scoring.hpp"
 
 
 struct MoveResult
@@ -29,9 +30,10 @@ using DurationMs = std::chrono::milliseconds;
 
 class ChessBot
 {
-    ChessBoardEvaluation evaluator;
+    ChessBoardEvaluator evaluator;
 
     std::shared_ptr<ChessBoard> board;
+    std::shared_ptr<MoveOrder> move_orderer;
 
     DurationMs time_limit;
     std::chrono::steady_clock::time_point search_start;
@@ -49,10 +51,10 @@ class ChessBot
     Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply);
     Evaluation SearchCore(Evaluation& alpha, Evaluation& beta, int depth, int ply, Move move, int move_idx);
 
-    int DepthExtension();
+    int DepthExtension(const Move& move);
 
 public:
-    ChessBot(std::shared_ptr<ChessBoard> _board);
+    ChessBot(std::shared_ptr<ChessBoard> board);
     ~ChessBot();
 
     void SetTimeLimit(DurationMs _time_limit);

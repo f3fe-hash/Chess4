@@ -1,11 +1,12 @@
-#include "bot.hpp"
+#include "core/bot.hpp"
 
 
-ChessBot::ChessBot(std::shared_ptr<ChessBoard> _board) : board(_board)
+ChessBot::ChessBot(std::shared_ptr<ChessBoard> board) : board(board)
 {
     transposition_table = std::make_shared<TranspositionTable>();
+    move_orderer = std::make_shared<MoveOrder>(transposition_table, board);
 
-    evaluator = ChessBoardEvaluation(_board, transposition_table);
+    evaluator = ChessBoardEvaluator(board, transposition_table, move_orderer);
 }
 
 
@@ -74,13 +75,19 @@ static inline Evaluation DenormalizeMateScore(Evaluation score, int ply)
 // Depth extension.
 // ------------------------------------------------------------
 
-int ChessBot::DepthExtension()
+int ChessBot::DepthExtension(const Move& move)
 {
+    int extension = 0;
+
     // If the move just played gives check, extend the search.
     if (board->IsCheck())
-        return 1;
+        extension += 1;
+    
+    // Is it a promption?
+    if (move.flags == MOVE_PROMOTION)
+        extension += 1;
 
-    return 0;
+    return extension;
 }
 
 
@@ -106,19 +113,26 @@ Evaluation ChessBot::SearchCore(
     // Extend checking moves.
     // --------------------------------------------------------
 
-    int extension = DepthExtension();
+    int extension = DepthExtension(move);
 
+    bool endgame = evaluator.IsEndgame();
     if (extension == 0)
     {
-        // Do not reduce the first few moves.
-        if (move_idx >= 5)
-            extension = -1;
-
-        else if (move_idx >= 15)
-            extension = -2;
-
-        else if (move_idx >= 35)
-            extension = -3;
+        if (!endgame)
+        {
+            if (move_idx >= 35)
+                extension = -3;
+            else if (move_idx >= 15)
+                extension = -2;
+            else if (move_idx >= 5)
+                extension = -1;
+        }
+        else
+        {
+            // Much more conservative LMR.
+            if (move_idx >= 20)
+                extension = -1;
+        }
     }
 
     int search_depth =
@@ -163,7 +177,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         return best_move;
     }
 
-    evaluator.SortMoves(moves, 0);
+    move_orderer->OrderMoves(moves, 0);
 
     // Give us a legal fallback move in case the time limit
     // expires before the first depth completes.
@@ -414,7 +428,7 @@ Evaluation ChessBot::MainSearch(
     // Move ordering.
     // --------------------------------------------------------
 
-    evaluator.SortMoves(moves, depth);
+    move_orderer->OrderMoves(moves, depth);
 
     // Save the original alpha/beta values.
     //

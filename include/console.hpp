@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "chess.hpp"
-#include "bot.hpp"
+#include "core/bot.hpp"
 
 // Commands:
 // move <from> <to>     - Make a move.

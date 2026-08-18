@@ -1,8 +1,8 @@
 #include <iostream>
 
 #include "chess.hpp"
-#include "bot.hpp"
 #include "console.hpp"
+#include "core/bot.hpp"
 
 int main()
 {

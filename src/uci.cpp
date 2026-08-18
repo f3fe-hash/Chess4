@@ -1,24 +1,36 @@
 #include "uci.hpp"
 
 
-std::vector<uint8_t> UCIInterface::HandleInit()
-{}
-
-
-std::vector<uint8_t> UCIInterface::HandleBestmove(std::vector<Move> moves)
+std::string UCI::Respond(const std::string& request)
 {
-    std::vector<uint8_t> str;
-    str.push_back("bestmove ");
+    if (
+        (request == "quit") || // Quit
+        (request == "stop") || // Stop calculation as soon as possible
+        (request == "setoption") || // Set an option
+        (request == "ponderhit") // The user has played the expected move.
+    )
+        return "";
     
-    Move bestmove = bot->Search(3, 100);
-    std::vector<uint8_t> bestmove_str = MoveToString(bestmove);
+    if (request == "uci")
+        return "uciok";
+    
+    if (request == "isready")
+        return "readyok";
+    
+    if (request == "ucinewgame")
+    {
+        // New game
+        board.reset();
 
-    InsertVector(str, bestmove);
-    return str;
+        board = std::make_shared<ChessBoard>();
+    }
+
+
+    return "";
 }
 
 
-Move UCIInterface::StringToMove(std::vector<uint8_t> str)
+Move UCI::StringToMove(std::string str)
 {
     Move move;
 
@@ -36,17 +48,18 @@ Move UCIInterface::StringToMove(std::vector<uint8_t> str)
 }
 
 
-std::vector<uint8_t> UCIInterface::MoveToString(const Move& move)
+std::string UCI::MoveToString(const Move& move)
 {
-    std::vector<uint8_t> str;
+    std::string str;
+    str.reserve(4);
 
-    str.push_back(get_piece_x(move.from) + 'a');
-    str.push_back(get_piece_y(move.from) + '1');
-    str.push_back(get_piece_x(move.to) + 'a');
-    str.push_back(get_piece_y(move.to) + '1');
-    str.push_back(0);
+    str.push_back(char(get_piece_x(move.from) + 'a'));
+    str.push_back(char(get_piece_y(move.from) + '1'));
+    str.push_back(char(get_piece_x(move.to)   + 'a'));
+    str.push_back(char(get_piece_y(move.to)   + '1'));
 
     return str;
 }
+
 
 

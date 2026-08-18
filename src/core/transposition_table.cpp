@@ -1,4 +1,4 @@
-#include "transposition_table.hpp"
+#include "core/transposition_table.hpp"
 
 
 // If this is updated, please also update the size of TranspositionTable::transposition_table
@@ -6,69 +6,59 @@ constexpr int BUCKETS = 100000;
 
 
 TranspositionTable::TranspositionTable()
+{}
+
+
+void TranspositionTable::_Store(
+    const ZobristHash& key,
+    const TranspositionTableEntry& entry)
 {
-    for (size_t i = 0; i < BUCKETS; i++)
+    const uint64_t bucket_idx = key % 100000;
+    Bucket& bucket = transposition_table[bucket_idx];
+
+    // First look for an existing entry.
+    for (Entry& tt_entry : bucket.entries)
     {
-        // With 100,000 buckets, it is VERY uncommon to find multiple entries in the same bucket.
-        transposition_table[i].reserve(4);
-    }
-}
-
-
-void TranspositionTable::_Store(const ZobristHash& key, const TranspositionTableEntry& entry_)
-{
-    uint64_t bucket_idx = key % BUCKETS;
-
-    const Entry entry = (Entry){
-        entry_, key
-    };
-
-    for (size_t entry_idx = 0; entry_idx < GetBucketSize(bucket_idx); entry_idx++)
-    {
-        // Use a reference so we can directly set it instead of re-addressing the TT.
-        Entry& tt_entry = transposition_table[bucket_idx][entry_idx];
-
-        if (tt_entry.key == key)
+        if ((tt_entry.key == key) && tt_entry.valid)
         {
-            // We have it. Just set it to the correct value.
-            tt_entry = entry;
-            break;
+            tt_entry = Entry{entry, key, true};
+            return;
         }
     }
 
-    // We don't have that entry. Add it to the end.
-    transposition_table[bucket_idx].push_back(entry);
+    // No existing entry. Replace one.
+    // TODO: implement a replacement policy.
+    // For now, overwrite existing entry at position 0.
+    //
+    bucket.entries[0] = Entry{entry, key, true};
+
 }
 
 
-TranspositionTableEntry TranspositionTable::_Get(const ZobristHash& key)
+TranspositionTableEntry TranspositionTable::_Get(
+    const ZobristHash& key)
 {
-    uint64_t bucket_idx = key % BUCKETS;
+    const uint64_t bucket_idx = key % 100000;
+    const Bucket& bucket = transposition_table[bucket_idx];
 
-    TranspositionTableEntry entry;
-    for (size_t entry_idx = 0; entry_idx < GetBucketSize(bucket_idx); entry_idx++)
+    for (const Entry& tt_entry : bucket.entries)
     {
-        Entry& tt_entry = transposition_table[bucket_idx][entry_idx];
-        if (tt_entry.key == key)
-        {
-            // Found it!
-            entry = tt_entry.entry;
-            break;
-        }
+        if ((tt_entry.key == key) && tt_entry.valid)
+            return tt_entry.entry;
     }
-    
-    return entry;
+
+    return {};
 }
 
 
 bool TranspositionTable::_Contains(const ZobristHash& key)
 {
-    uint64_t bucket_idx = key % BUCKETS;
+    const uint64_t bucket_idx = key % 100000;
+    const Bucket& bucket = transposition_table[bucket_idx];
 
-    for (size_t entry_idx = 0; entry_idx < GetBucketSize(bucket_idx); entry_idx++)
+    for (const Entry& tt_entry : bucket.entries)
     {
-        Entry entry = transposition_table[bucket_idx][entry_idx];
-        if (entry.key == key)
+        if ((tt_entry.key == key) && tt_entry.valid)
             return true;
     }
 
@@ -76,12 +66,17 @@ bool TranspositionTable::_Contains(const ZobristHash& key)
 }
 
 
-size_t TranspositionTable::GetNumEntries()
+size_t TranspositionTable::GetNumEntries() const
 {
     size_t num_entries = 0;
-    for (size_t bucket_idx = 0; bucket_idx < BUCKETS; bucket_idx++)
+
+    for (const Bucket& bucket : transposition_table)
     {
-        num_entries += GetBucketSize(bucket_idx);
+        for (const Entry& entry : bucket.entries)
+        {
+            if (entry.valid)
+                ++num_entries;
+        }
     }
 
     return num_entries;

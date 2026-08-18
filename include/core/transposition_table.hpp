@@ -3,9 +3,7 @@
 #include <unordered_map>
 
 #include "chess.hpp"
-
-
-using Evaluation = float;
+#include "core/scoring.hpp"
 
 
 enum class TranspositionTableBound
@@ -24,26 +22,13 @@ enum class TranspositionTableBound
 struct TranspositionTableEntry
 {
     Evaluation eval;
+    TranspositionTableBound bound;
+    Move best_move;
     uint8_t depth;
 
-    TranspositionTableBound bound;
-
-    Move best_move;
-
     TranspositionTableEntry() = default;
-
-    TranspositionTableEntry(const TranspositionTableEntry& other)
-    {
-        *this = other;
-    }
-
-    void operator = (const TranspositionTableEntry& other)
-    {
-        eval = other.eval;
-        depth = other.depth;
-        bound = other.bound;
-        best_move = other.best_move;
-    }
+    TranspositionTableEntry(const TranspositionTableEntry&) = default;
+    TranspositionTableEntry& operator=(const TranspositionTableEntry&) = default;
 };
 
 
@@ -51,30 +36,25 @@ class TranspositionTable
 {
     struct Entry
     {
-        TranspositionTableEntry entry;
-        ZobristHash key;
+        TranspositionTableEntry entry{};
+        ZobristHash key{};
+        bool valid;
 
         Entry() = default;
 
-        Entry(const Entry& other)
+        Entry(const TranspositionTableEntry& entry, ZobristHash key, bool valid)
+            : entry(entry), key(key), valid(valid)
         {
-            *this = other;
-        }
-
-        void operator = (const Entry& other)
-        {
-            entry = other.entry;
-            key = other.key;
         }
     };
 
-    // Zobrist hash -> Transposition entry data
-    //std::unordered_map<ZobristHash, Entry> transposition_table;
-    std::vector<Entry> transposition_table[100000];
+    struct Bucket
+    {
+        Entry entries[4];
+    };
 
-    // Return the size of a bucket.
-    inline size_t GetBucketSize(const uint64_t& bucket)
-    { return static_cast<size_t> (transposition_table[bucket].size()); } 
+    // Zobrist hash -> Transposition entry data
+    Bucket transposition_table[100000];
 
     void _Store(const ZobristHash& key, const TranspositionTableEntry& entry);
     TranspositionTableEntry _Get(const ZobristHash& key);
@@ -86,7 +66,7 @@ public:
     TranspositionTable();
     ~TranspositionTable() {}
 
-    size_t GetNumEntries();
+    size_t GetNumEntries() const;
 
     bool keyIsStored(const ZobristHash& key);
 
