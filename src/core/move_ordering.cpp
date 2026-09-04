@@ -1,7 +1,7 @@
 #include "core/move_ordering.hpp"
 
 
-Evaluation MoveOrder::PieceValue(Piece piece)
+Evaluation MoveOrder::PieceValue(Piece piece) const
 {
     // Uses previously set endgame phase.
     switch (piece & 0x07)
@@ -20,7 +20,7 @@ Evaluation MoveOrder::PieceValue(Piece piece)
 Evaluation MoveOrder::MoveOrderScore(
     const Move& move,
     const Move& tt_move,
-    const int depth)
+    const int depth) const
 {
     constexpr Evaluation TT_MOVE_DEPTH_BONUS = 300.0;
 
@@ -50,7 +50,7 @@ Evaluation MoveOrder::MoveOrderScore(
 }
 
 
-void MoveOrder::OrderMoves(std::vector<Move>& moves, int depth)
+void MoveOrder::OrderMoves(std::vector<Move>& moves, int depth) const
 {
     Move tt_move{};
     ZobristHash key = board->GetZobristHash();

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <algorithm>
 #include <iostream>
+#include <atomic>
 
 #include <unordered_map>
 
@@ -38,6 +39,7 @@ class ChessBot
     DurationMs time_limit;
     std::chrono::steady_clock::time_point search_start;
     bool time_up;
+    std::atomic<bool> stop_requested{false};
 
     std::shared_ptr<TranspositionTable> transposition_table;
 
@@ -48,8 +50,20 @@ class ChessBot
         return board->GetZobristHash();
     }
 
+    inline bool ShouldStop() const
+    {
+        return stop_requested.load();
+    }
+
     Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply);
-    Evaluation SearchCore(Evaluation& alpha, Evaluation& beta, int depth, int ply, Move move, int move_idx);
+    Evaluation SearchCore(
+        Evaluation alpha,
+        Evaluation beta,
+        int depth,
+        int ply,
+        Move move,
+        int move_idx,
+        bool is_root_search);
 
     int DepthExtension(const Move& move);
 
@@ -58,7 +72,7 @@ public:
     ~ChessBot();
 
     void SetTimeLimit(DurationMs _time_limit);
-    DurationMs GetTimeLimit()
+    DurationMs GetTimeLimit() const
     { return time_limit; }
 
     inline Evaluation Evaluate()
@@ -67,8 +81,20 @@ public:
     inline Evaluation EvaluateRaw()
     { return evaluator.EvaluatePosition(); }
 
-    inline size_t GetTranspositionTableSize()
+    inline size_t GetTranspositionTableSize() const
     { return transposition_table->GetNumEntries(); }
+
+    inline void Stop()
+    { stop_requested.store(true); }
+
+    DurationMs CalculateThinkTime(
+        const DurationMs wtime,
+        const DurationMs btime,
+        const DurationMs orig_wtime,
+        const DurationMs orig_btime,
+        const DurationMs winc,
+        const DurationMs binc
+    ) const;
 
     MoveResult Search(int min_depth, int max_depth);
 };

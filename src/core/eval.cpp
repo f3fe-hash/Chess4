@@ -5,13 +5,13 @@
 //  Evaluation multipliers
 // 
 
-const float PIECE_VALUE_MULTIPLIER      = 0.5; // Keeping pieces safe
-const float PST_EVAL_MULTIPLIER         = 2.4; // Piece positioning
-const float MOP_UP_MULTIPLIER           = 1.4; // Endgames: pus king to edges
+const float PIECE_VALUE_MULTIPLIER      = 1; // Keeping pieces safe
+const float PST_EVAL_MULTIPLIER         = 1.5; // Piece positioning
+const float MOP_UP_MULTIPLIER           = 1.2; // Endgames: push king to edges
 
 // Note: captures evaluation are ON TOP of generic moves.
-const float MOBILITY_MULTIPLIER         = 0.9; // make sure you have plenty legal moves
-const float MOBILITY_MOVE_MULTIPLIER    = 2; // Generic moves don't count for much.
+const float MOBILITY_MULTIPLIER         = 0.9;
+const float MOBILITY_MOVE_MULTIPLIER    = 1; // Generic moves don't count for much.
 const float MOBILITY_CAPTURE_MULTIPLIER = 2; // Captures are better than generic moves.
 
 
@@ -46,7 +46,7 @@ const int KNIGHT_PST[64] = {
     -50, -10, -30, -30, -30, -30, -10, -50
 };
 
-// TODO: Tweak / edit
+// Bishop values favor central diagonals and open development squares.
 const int BISHOP_PST[64] = {
     -20, -10, -10, -10, -10, -10, -10, -20,
     -10,   0,   0,   0,   0,   0,   0, -10,

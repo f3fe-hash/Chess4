@@ -8,6 +8,9 @@
 
 enum class TranspositionTableBound
 {
+    // Default
+    NONE,
+
     // We have found the EXACT evaluation (at this depth)
     EXACT,
 
@@ -21,13 +24,13 @@ enum class TranspositionTableBound
 
 struct TranspositionTableEntry
 {
-    Evaluation eval;
-    TranspositionTableBound bound;
-    Move best_move;
-    uint8_t depth;
+    Evaluation eval = 0.00;
+    TranspositionTableBound bound = TranspositionTableBound::NONE;
+    Move best_move{};
+    uint8_t depth = 0;
 
     TranspositionTableEntry() = default;
-    TranspositionTableEntry(const TranspositionTableEntry&) = default;
+    TranspositionTableEntry(const TranspositionTableEntry&) = default; // Copy
     TranspositionTableEntry& operator=(const TranspositionTableEntry&) = default;
 };
 
@@ -38,19 +41,35 @@ class TranspositionTable
     {
         TranspositionTableEntry entry{};
         ZobristHash key{};
-        bool valid;
+        bool valid_ = false;
 
         Entry() = default;
 
-        Entry(const TranspositionTableEntry& entry, ZobristHash key, bool valid)
-            : entry(entry), key(key), valid(valid)
+        Entry(
+            const TranspositionTableEntry& entry,
+            ZobristHash key,
+            bool valid)
+            : entry(entry),
+            key(key),
+            valid_(valid)
         {
+        }
+
+        inline bool is_valid(const ZobristHash& key) const
+        {
+            return valid_ && key == this->key;
+        }
+
+        inline bool is_valid() const
+        {
+            return valid_;
         }
     };
 
     struct Bucket
     {
         Entry entries[8];
+        int n_entries = 0;
     };
 
     // Zobrist hash -> Transposition entry data
@@ -63,8 +82,9 @@ class TranspositionTable
     void setBound(const ZobristHash& key, const Evaluation exact_eval, const int depth, const TranspositionTableBound bound);
 
 public:
-    TranspositionTable();
-    ~TranspositionTable() {}
+    TranspositionTable() = default;
+    ~TranspositionTable() = default;
+    TranspositionTable(const TranspositionTable&) = default; // Copy
 
     size_t GetNumEntries() const;
 

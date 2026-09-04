@@ -1,0 +1,286 @@
+#include "interface/uci_server.hpp"
+
+
+UCIServer::UCIServer(
+    std::shared_ptr<UCI> uci,
+    uint16_t port)
+    :
+    uci(std::move(uci)),
+    port(port)
+{
+}
+
+
+UCIServer::~UCIServer()
+{
+    Stop();
+}
+
+
+bool UCIServer::CreateSocket()
+{
+    server_socket = socket(
+        AF_INET,
+        SOCK_STREAM,
+        0);
+
+    if (server_socket < 0)
+        return false;
+
+    /*
+     * Allow the port to be reused immediately after
+     * restarting the engine.
+     */
+    int reuse = 1;
+
+    if (setsockopt(
+            server_socket,
+            SOL_SOCKET,
+            SO_REUSEADDR,
+            &reuse,
+            sizeof(reuse)) < 0)
+    {
+        CloseServer();
+        return false;
+    }
+
+    sockaddr_in address{};
+
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    address.sin_port = htons(port);
+
+    if (bind(
+            server_socket,
+            reinterpret_cast<sockaddr*>(&address),
+            sizeof(address)) < 0)
+    {
+        CloseServer();
+        return false;
+    }
+
+    if (listen(server_socket, 1) < 0)
+    {
+        CloseServer();
+        return false;
+    }
+
+    return true;
+}
+
+
+bool UCIServer::AcceptClient()
+{
+    sockaddr_in client_address{};
+
+    socklen_t address_length =
+        sizeof(client_address);
+
+    client_socket = accept(
+        server_socket,
+        reinterpret_cast<sockaddr*>(&client_address),
+        &address_length);
+
+    if (client_socket < 0)
+    {
+        client_socket = -1;
+        return false;
+    }
+
+    return true;
+}
+
+
+void UCIServer::CloseClient()
+{
+    if (client_socket < 0)
+        return;
+
+    shutdown(
+        client_socket,
+        SHUT_RDWR);
+
+    close(client_socket);
+
+    client_socket = -1;
+}
+
+
+void UCIServer::CloseServer()
+{
+    if (server_socket < 0)
+        return;
+
+    shutdown(
+        server_socket,
+        SHUT_RDWR);
+
+    close(server_socket);
+
+    server_socket = -1;
+}
+
+
+bool UCIServer::Send(
+    const std::string& data)
+{
+    const char* current = data.data();
+    size_t remaining = data.size();
+
+    while (remaining > 0)
+    {
+        ssize_t sent = send(
+            client_socket,
+            current,
+            remaining,
+            MSG_NOSIGNAL);
+
+        if (sent <= 0)
+            return false;
+
+        current += sent;
+        remaining -= sent;
+    }
+
+    return true;
+}
+
+
+bool UCIServer::SendLine(
+    const std::string& line)
+{
+    std::string message = line;
+
+    if (message.empty() ||
+        message.back() != '\n')
+    {
+        message += '\n';
+    }
+
+    return Send(message);
+}
+
+
+std::string UCIServer::ReceiveLine()
+{
+    std::string line;
+
+    char c;
+
+    while (true)
+    {
+        ssize_t received = recv(
+            client_socket,
+            &c,
+            1,
+            0);
+
+        if (received == 0)
+        {
+            // Client disconnected.
+            return {};
+        }
+
+        if (received < 0)
+        {
+            if (errno == EINTR)
+                continue;
+
+            return {};
+        }
+
+        if (c == '\n')
+            break;
+
+        /*
+         * UCI uses LF, but accepting CRLF costs nothing.
+         */
+        if (c != '\r')
+            line += c;
+    }
+
+    return line;
+}
+
+
+void UCIServer::Run()
+{
+    if (running)
+        return;
+
+    if (!CreateSocket())
+        return;
+
+    running = true;
+
+    while (running)
+    {
+        /*
+         * Wait for a client.
+         */
+        if (!AcceptClient())
+        {
+            if (!running)
+                break;
+
+            continue;
+        }
+
+        /*
+         * Serve this client until it disconnects
+         * or sends "quit".
+         */
+        while (running)
+        {
+            std::string command = ReceiveLine();
+
+            if (command.empty())
+                break;
+
+            std::string response =
+                uci->Respond(command);
+
+            if (!response.empty())
+            {
+                if (!Send(response))
+                    break;
+
+                /*
+                 * Respond() is allowed to return multiple
+                 * lines. Make sure the response terminates
+                 * with a newline.
+                 */
+                if (response.back() != '\n')
+                {
+                    if (!Send("\n"))
+                        break;
+                }
+            }
+
+            if (uci->QuitRequested())
+            {
+                running = false;
+                break;
+            }
+        }
+
+        CloseClient();
+    }
+
+    CloseServer();
+
+    running = false;
+}
+
+
+void UCIServer::Stop()
+{
+    if (!running)
+        return;
+
+    running = false;
+
+    CloseClient();
+    CloseServer();
+}
+

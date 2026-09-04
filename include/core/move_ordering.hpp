@@ -13,13 +13,13 @@ class MoveOrder
     std::shared_ptr<TranspositionTable> transposition_table;
     std::shared_ptr<ChessBoard> board;
 
-    Evaluation PieceValue(Piece piece);
+    Evaluation PieceValue(Piece piece) const;
 
     // Generate a score for move ordering.
     Evaluation MoveOrderScore(
         const Move& move,
         const Move& tt_move,
-        const int depth);
+        const int depth) const;
 
 public:
     MoveOrder() {}
@@ -32,5 +32,5 @@ public:
     
     ~MoveOrder() {}
 
-    void OrderMoves(std::vector<Move>& moves, int depth);
+    void OrderMoves(std::vector<Move>& moves, int depth) const;
 };

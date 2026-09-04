@@ -88,9 +88,11 @@ using Square = uint8_t;
 
 #define NULL_PIECE  ( PIECE_TYPE_NONE | PIECE_COLOR_NONE )
 
-#define flatten_xy(x, y)    ( ((y) << 3) | (x) )
-#define get_piece_x(square) ( (square) & 0x07 )
-#define get_piece_y(square) ( (square) >> 3 )
+#define flatten_xy(x, y)        ( ((y) << 3) | (x) )
+#define get_piece_x(square)     ( (square) & 0x07 )
+#define get_piece_y(square)     ( (square) >> 3 )
+#define get_piece_type(piece)   ( (piece) & 0x07 )
+#define get_piece_color(piece)  ( (piece) & 0x18 )
 
 // Note: pieces only actually take up 5 bits.
 using Piece = uint8_t;
@@ -99,6 +101,7 @@ constexpr uint8_t MOVE_NORMAL             = 0x00;
 constexpr uint8_t MOVE_PROMOTION          = 0x01;
 constexpr uint8_t MOVE_CASTLE_KINGSIDE    = 0x02;
 constexpr uint8_t MOVE_CASTLE_QUEENSIDE   = 0x04;
+constexpr uint8_t MOVE_EN_PASSANT         = 0x08;
 
 enum CastlingRights
 {
@@ -111,25 +114,26 @@ enum CastlingRights
 
 struct Move
 {
-    // To / from squares.
     Square from;
     Square to;
 
-    // Piece moved.
     Piece moved;
-
-    // Piece captured.
     Piece captured;
+
+    // Piece a pawn promotes to. NULL_PIECE for normal moves.
+    Piece promotion = NULL_PIECE;
 
     int8_t flags;
     CastlingRights prev_castling_rights;
+    Square prev_en_passant;
 
     bool operator==(const Move& other) const
     {
         return from == other.from &&
             to == other.to &&
             (!moved || !other.moved || moved == other.moved) &&
-            (!captured || !other.captured || captured == other.captured);
+            (!captured || !other.captured || captured == other.captured) &&
+            (!promotion || !other.promotion || promotion == other.promotion);
     }
 };
 
@@ -143,6 +147,8 @@ struct ZobristTable
     uint64_t castling[16];
     // Key toggled when it is Black's turn to move
     uint64_t side_to_move;
+    // One key per en-passant file.
+    uint64_t en_passant[8];
 
     ZobristTable() 
     {
@@ -163,6 +169,9 @@ struct ZobristTable
             castling[c] = next_rand();
 
         side_to_move = next_rand();
+
+        for (int file = 0; file < 8; ++file)
+            en_passant[file] = next_rand();
     }
 };
 
@@ -195,6 +204,9 @@ class ChessBoard
     TurnColor turn;
 
     CastlingRights castling_rights;
+
+    // En-passant target square, or 64 when no target exists.
+    Square en_passant;
 
     uint64_t zobrist_hash;
 
@@ -243,30 +255,30 @@ public:
     std::vector<Move> GetLegalMoves();
     std::vector<Move> GetLegalCaptures();
 
-    void GetNumLegalMovesAndCaptures(size_t& moves_count, size_t& captures_count);
+    void GetNumLegalMovesAndCaptures(size_t& moves_count, size_t& captures_count) const;
 
     bool IsLegalMove(Move move);
 
     bool IsCheck();
-    bool IsThreeFoldRepition();
+    bool IsThreeFoldRepition() const;
     bool IsCheckMate();
     bool IsStaleMate();
 
-    uint8_t CountPawns();
-    uint8_t CountKnights();
-    uint8_t CountBishops();
-    uint8_t CountRooks();
-    uint8_t CountQueens();
-    uint8_t CountKings();
+    uint8_t CountPawns() const;
+    uint8_t CountKnights() const;
+    uint8_t CountBishops() const;
+    uint8_t CountRooks() const;
+    uint8_t CountQueens() const;
+    uint8_t CountKings() const;
 
-    Square PopPawns();
-    Square PopKnights();
-    Square PopBishops();
-    Square PopRooks();
-    Square PopQueens();
-    Square PopKings();
+    Square PopPawns() const;
+    Square PopKnights() const;
+    Square PopBishops() const;
+    Square PopRooks() const;
+    Square PopQueens() const;
+    Square PopKings() const;
 
-    inline bool GetTurnColor()
+    inline bool GetTurnColor() const
     { return turn; }
 
     inline void SetTurnColor(bool turn_color)

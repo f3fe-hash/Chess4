@@ -1,11 +1,18 @@
-#define CONSOLE_APP
+//#define CONSOLE_APP
+#define UCI_SERVER
 //#define MATCH_TEST
 
 #include <iostream>
 
 #include "chess.hpp"
-#include "console.hpp"
 #include "core/bot.hpp"
+
+#ifdef UCI_SERVER
+# include "interface/uci.hpp"
+# include "interface/uci_server.hpp"
+#else
+# include "interface/console.hpp"
+#endif
 
 std::shared_ptr<ChessBoard> board;
 std::shared_ptr<ChessBot> bot1, bot2;
@@ -14,15 +21,21 @@ std::shared_ptr<ChessBot> bot1, bot2;
 int main()
 {
     board = std::make_shared<ChessBoard>();
-    board->LoadFEN("rnbqkbnr/pppppp1p/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    board->LoadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+
+    bot1 = std::make_shared<ChessBot>(board);
 
 #ifdef CONSOLE_APP
-    bot1 = std::make_shared<ChessBot>(board);
-    
     Console console(board, bot1);
     bot1->SetTimeLimit(DurationMs(100));
 
     console.run();
+#endif
+
+#ifdef UCI_SERVER
+    std::shared_ptr<UCI> uci = std::make_shared<UCI>(board, bot1);
+    UCIServer server(uci, 8080);
+    server.Run();
 #endif
 
 #ifdef MATCH_TEST

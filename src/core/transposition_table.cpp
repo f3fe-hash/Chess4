@@ -5,45 +5,76 @@
 constexpr int BUCKETS = 65535;
 
 
-TranspositionTable::TranspositionTable()
-{}
-
-
 void TranspositionTable::_Store(
     const ZobristHash& key,
     const TranspositionTableEntry& entry)
 {
-    const uint64_t bucket_idx = key % BUCKETS;
+    const uint32_t bucket_idx = key % BUCKETS;
     Bucket& bucket = transposition_table[bucket_idx];
 
-    // First look for an existing entry.
-    for (Entry& tt_entry : bucket.entries)
+    const Entry stored_entry{
+        entry,
+        key,
+        true
+    };
+
+    // --------------------------------------------------------
+    // Existing entry?
+    // --------------------------------------------------------
+
+    for (int entry_idx = 0;
+         entry_idx < bucket.n_entries;
+         ++entry_idx)
     {
-        if ((tt_entry.key == key) && tt_entry.valid)
+        Entry& tt_entry = bucket.entries[entry_idx];
+
+        if (tt_entry.is_valid(key))
         {
-            tt_entry = Entry{entry, key, true};
+            // Replace existing entry.
+            //
+            // IMPORTANT:
+            // n_entries must NOT change.
+            tt_entry = stored_entry;
             return;
         }
     }
 
-    // No existing entry. Replace one.
-    // TODO: implement a replacement policy.
-    // For now, overwrite existing entry at position 0.
-    //
-    bucket.entries[0] = Entry{entry, key, true};
+    // --------------------------------------------------------
+    // Empty slot?
+    // --------------------------------------------------------
 
+    if (bucket.n_entries < 8)
+    {
+        bucket.entries[bucket.n_entries] = stored_entry;
+        ++bucket.n_entries;
+        return;
+    }
+
+    // Prefer retaining deeper searches when a bucket collides.
+    int replacement_idx = 0;
+    for (int entry_idx = 1; entry_idx < bucket.n_entries; ++entry_idx)
+    {
+        if (bucket.entries[entry_idx].entry.depth <
+            bucket.entries[replacement_idx].entry.depth)
+        {
+            replacement_idx = entry_idx;
+        }
+    }
+
+    bucket.entries[replacement_idx] = stored_entry;
 }
 
 
 TranspositionTableEntry TranspositionTable::_Get(
     const ZobristHash& key)
 {
-    const uint64_t bucket_idx = key % BUCKETS;
+    const uint32_t bucket_idx = key % BUCKETS;
     const Bucket& bucket = transposition_table[bucket_idx];
 
-    for (const Entry& tt_entry : bucket.entries)
+    for (int entry_idx = 0; entry_idx < bucket.n_entries; entry_idx++)
     {
-        if ((tt_entry.key == key) && tt_entry.valid)
+        const Entry& tt_entry = bucket.entries[entry_idx];
+        if (tt_entry.is_valid(key))
             return tt_entry.entry;
     }
 
@@ -53,12 +84,13 @@ TranspositionTableEntry TranspositionTable::_Get(
 
 bool TranspositionTable::_Contains(const ZobristHash& key)
 {
-    const uint64_t bucket_idx = key % BUCKETS;
+    const uint32_t bucket_idx = key % BUCKETS;
     const Bucket& bucket = transposition_table[bucket_idx];
 
-    for (const Entry& tt_entry : bucket.entries)
+    for (int entry_idx = 0; entry_idx < bucket.n_entries; entry_idx++)
     {
-        if ((tt_entry.key == key) && tt_entry.valid)
+        const Entry& tt_entry = bucket.entries[entry_idx];
+        if (tt_entry.is_valid(key))
             return true;
     }
 
@@ -74,7 +106,7 @@ size_t TranspositionTable::GetNumEntries() const
     {
         for (const Entry& entry : bucket.entries)
         {
-            if (entry.valid)
+            if (entry.valid_)
                 ++num_entries;
         }
     }
@@ -95,44 +127,54 @@ TranspositionTableEntry TranspositionTable::getKey(const ZobristHash& key)
 }
 
 
-void TranspositionTable::setBestMove(const ZobristHash& key, const Move& move, const int depth)
+void TranspositionTable::setBestMove(
+    const ZobristHash& key,
+    const Move& move,
+    const int depth)
 {
-    // Only store if the depth is higher than the stored depth.
-    // Or if the key isn't stored yet.
+    TranspositionTableEntry entry{};
+
     if (_Contains(key))
     {
-        if (_Get(key).depth <= depth)
+        entry = _Get(key);
+
+        // Don't replace a deeper entry.
+        if (entry.depth > depth)
             return;
     }
-    
-    TranspositionTableEntry entry;
-    entry.depth = static_cast<uint8_t>(depth);
+
     entry.best_move = move;
-    
+
+    // Only update depth if this is a deeper entry.
+    if (entry.depth < depth)
+        entry.depth = static_cast<uint8_t>(depth);
+
     _Store(key, entry);
 }
 
 
-void TranspositionTable::setBound(const ZobristHash& key, const Evaluation exact_eval, const int depth, const TranspositionTableBound bound)
+void TranspositionTable::setBound(
+    const ZobristHash& key,
+    const Evaluation eval,
+    const int depth,
+    const TranspositionTableBound bound)
 {
-    TranspositionTableEntry entry;
+    TranspositionTableEntry entry{};
 
-    // Only store if the depth is higher than the stored depth.
-    // Or if the key isn't stored yet.
     if (_Contains(key))
     {
         entry = _Get(key);
-        if (entry.depth <= depth)
+
+        // Don't replace a deeper entry with a shallower one.
+        if (entry.depth > depth)
             return;
     }
 
-    entry.eval = exact_eval;
-    entry.depth = static_cast<uint8_t>(depth);
+    entry.eval = eval;
     entry.bound = bound;
+    entry.depth = static_cast<uint8_t>(depth);
 
-    // Store the entry in the transposition table.
     _Store(key, entry);
-
 }
 
 

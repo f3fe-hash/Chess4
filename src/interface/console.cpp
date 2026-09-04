@@ -1,4 +1,4 @@
-#include "console.hpp"
+#include "interface/console.hpp"
 
 #include <ncurses.h>
 

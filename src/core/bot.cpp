@@ -20,6 +20,113 @@ void ChessBot::SetTimeLimit(DurationMs _time_limit)
 }
 
 
+DurationMs ChessBot::CalculateThinkTime(
+    const DurationMs wtime,
+    const DurationMs btime,
+    const DurationMs orig_wtime,
+    const DurationMs orig_btime,
+    const DurationMs winc,
+    const DurationMs binc
+)
+const
+{
+    const bool white_to_move =
+        board->GetTurnColor() == TURN_WHITE;
+
+    const DurationMs current_time =
+        white_to_move ? wtime : btime;
+
+    const DurationMs opponent_time =
+        white_to_move ? btime : wtime;
+
+    const DurationMs original_time =
+        white_to_move ? orig_wtime : orig_btime;
+
+    const DurationMs increment =
+        white_to_move ? winc : binc;
+
+    if (current_time.count() <= 0)
+        return DurationMs(1);
+
+    // Determine which part of the game we're in based on
+    // how much of our original clock remains.
+    double time_remaining_ratio = 1.0;
+
+    if (original_time.count() > 0)
+    {
+        time_remaining_ratio =
+            static_cast<double>(current_time.count()) /
+            static_cast<double>(original_time.count());
+    }
+
+    double time_fraction = 0.0;
+
+    if (time_remaining_ratio > 2.0 / 3.0)
+    {
+        // Opening.
+        time_fraction = 1.0 / 120.0;
+    }
+    else if (time_remaining_ratio > 1.0 / 3.0)
+    {
+        // Middlegame.
+        time_fraction = 1.0 / 60.0;
+    }
+    else
+    {
+        // Endgame / low clock.
+        time_fraction = 1.0 / 240.0;
+    }
+
+    auto think_time =
+        static_cast<int64_t>(
+            current_time.count() * time_fraction);
+
+    // If we're significantly behind on time, be more conservative.
+    double clock_ratio = 1.0;
+
+    if (opponent_time.count() > 0)
+    {
+        clock_ratio =
+            static_cast<double>(current_time.count()) /
+            static_cast<double>(opponent_time.count());
+    }
+
+    if (clock_ratio < 0.5)
+        think_time *= 0.75;
+    else if (clock_ratio > 2.0)
+        think_time *= 1.25;
+
+    // Use part of the increment as additional thinking time.
+    //
+    // This makes increments useful without allowing the engine
+    // to spend the entire increment every move.
+    constexpr double INCREMENT_FRACTION = 0.5;
+
+    think_time += static_cast<int64_t>(
+        increment.count() * INCREMENT_FRACTION
+    );
+
+    constexpr int64_t MIN_THINK_TIME_MS = 50;
+    constexpr int64_t MAX_THINK_TIME_MS = 15000;
+
+    think_time = std::clamp(
+        think_time,
+        MIN_THINK_TIME_MS,
+        MAX_THINK_TIME_MS
+    );
+
+    // Leave a small safety margin on the clock.
+    think_time = std::min(
+        think_time,
+        std::max<int64_t>(1, current_time.count() - 10)
+    );
+
+    return DurationMs(
+        std::max<int64_t>(1, think_time)
+    );
+}
+
+
 // ------------------------------------------------------------
 // Mate-score helpers.
 // ------------------------------------------------------------
@@ -96,12 +203,13 @@ int ChessBot::DepthExtension(const Move& move)
 // ------------------------------------------------------------
 
 Evaluation ChessBot::SearchCore(
-    Evaluation& alpha,
-    Evaluation& beta,
+    Evaluation alpha,
+    Evaluation beta,
     int depth,
     int ply,
     Move move,
-    int move_idx)
+    int move_idx,
+    bool is_root_search)
 {
     // --------------------------------------------------------
     // Make the move.
@@ -118,32 +226,32 @@ Evaluation ChessBot::SearchCore(
     // LMR values
 #define LMR_LOW -1 // Low
 #define LMR_MED -2 // Medium
-#define LMR_HIG -4 // High
-#define LMR_EXT -6 // Extreme
+#define LMR_HIG -3 // High
+#define LMR_EXT -3 // Extreme - disabled for now
 
 
     bool endgame = evaluator.IsEndgame();
-    if (extension <= 1)
+    if ((extension == 0) && !is_root_search)
     {
         if (!endgame)
         {
-            if (move_idx >= 60)
+            if (move_idx >= 120)
                 extension += LMR_EXT;
-            else if (move_idx >= 35)
+            else if (move_idx >= 60)
                 extension += LMR_HIG;
-            else if (move_idx >= 15)
+            else if (move_idx >= 30)
                 extension += LMR_MED;
-            else if (move_idx >= 5)
+            else if (move_idx >= 8)
                 extension += LMR_LOW;
         }
         else
         {
             // Much more conservative LMR for endgames.
-            if (move_idx >= 80)
+            if (move_idx >= 150)
                 extension += LMR_EXT;
-            else if (move_idx >= 50)
+            else if (move_idx >= 80)
                 extension += LMR_HIG;
-            else if (move_idx >= 30)
+            else if (move_idx >= 50)
                 extension += LMR_MED;
             else if (move_idx >= 20)
                 extension += LMR_LOW;
@@ -175,8 +283,25 @@ Evaluation ChessBot::SearchCore(
 
 MoveResult ChessBot::Search(int min_depth, int max_depth)
 {
+    // Checkmate / stalemate
+    if (board->IsCheckMate() || board->IsStaleMate())
+    {
+        Move move;
+        move.to = 0;
+        move.from = 0;
+
+        MoveResult result;
+        result.move = move;
+        result.eval = 0;
+        result.nodes_searched = 0;
+        result.depth = 0;
+
+        return result;
+    }
+
     nodes_searched = 0;
     time_up = false;
+    stop_requested.store(false);
     search_start = std::chrono::steady_clock::now();
 
     std::vector<Move> moves = board->GetLegalMoves();
@@ -192,8 +317,6 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
         return best_move;
     }
-
-    move_orderer->OrderMoves(moves, 0);
 
     // Give us a legal fallback move in case the time limit
     // expires before the first depth completes.
@@ -217,6 +340,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         {
             break;
         }
+
+        move_orderer->OrderMoves(moves, 0);
 
         Evaluation alpha = INT32_MIN;
         Evaluation beta  = INT32_MAX;
@@ -259,7 +384,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                     depth,
                     0,
                     move,
-                    move_idx
+                    move_idx,
+                    true
                 );
 
             if (time_up)
@@ -337,12 +463,24 @@ Evaluation ChessBot::MainSearch(
 
     if ((nodes_searched & 4095) == 0)
     {
-        if (time_limit.count() > 0 &&
-            std::chrono::steady_clock::now() - search_start
-                >= time_limit)
+        if (stop_requested.load())
         {
             time_up = true;
             return 0;
+        }
+
+        if (time_limit.count() > 0)
+        {
+            auto elapsed =
+                std::chrono::duration_cast<DurationMs>(
+                    std::chrono::steady_clock::now() -
+                    search_start);
+
+            if (elapsed >= time_limit)
+            {
+                time_up = true;
+                return 0;
+            }
         }
     }
 
@@ -396,8 +534,8 @@ Evaluation ChessBot::MainSearch(
     }
 
     // 3-fold repition
-    if (board->IsThreeFoldRepition())
-        return 0;
+    //if (board->IsThreeFoldRepition())
+    //    return 0;
 
     // --------------------------------------------------------
     // Leaf evaluation.
@@ -436,6 +574,10 @@ Evaluation ChessBot::MainSearch(
 
                 case TranspositionTableBound::UPPER:
                     beta = std::min(beta, tt_eval);
+                    break;
+                
+                // TranspositionTableBound::NONE
+                default:
                     break;
             }
 
@@ -479,7 +621,8 @@ Evaluation ChessBot::MainSearch(
                     depth,
                     ply,
                     move,
-                    move_idx
+                    move_idx,
+                    false
                 );
 
             if (time_up)
@@ -488,7 +631,7 @@ Evaluation ChessBot::MainSearch(
             if (eval > best_eval)
             {
                 best_eval = eval;
-                transposition_table->setBestMove(board->GetZobristHash(), move, depth);
+                transposition_table->setBestMove(key, move, depth);
             }
             
             alpha = std::max(alpha, eval);
@@ -534,7 +677,8 @@ Evaluation ChessBot::MainSearch(
                     depth,
                     ply,
                     move,
-                    move_idx
+                    move_idx,
+                    false
                 );
 
             if (time_up)
@@ -543,7 +687,7 @@ Evaluation ChessBot::MainSearch(
             if (eval < best_eval)
             {
                 best_eval = eval;
-                transposition_table->setBestMove(board->GetZobristHash(), move, depth);
+                transposition_table->setBestMove(key, move, depth);
             }
 
             beta = std::min(beta, eval);
