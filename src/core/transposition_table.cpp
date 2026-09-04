@@ -66,7 +66,7 @@ void TranspositionTable::_Store(
 
 
 TranspositionTableEntry TranspositionTable::_Get(
-    const ZobristHash& key)
+    const ZobristHash& key) const
 {
     const uint32_t bucket_idx = key % BUCKETS;
     const Bucket& bucket = transposition_table[bucket_idx];
@@ -82,7 +82,7 @@ TranspositionTableEntry TranspositionTable::_Get(
 }
 
 
-bool TranspositionTable::_Contains(const ZobristHash& key)
+bool TranspositionTable::_Contains(const ZobristHash& key) const
 {
     const uint32_t bucket_idx = key % BUCKETS;
     const Bucket& bucket = transposition_table[bucket_idx];
@@ -115,13 +115,13 @@ size_t TranspositionTable::GetNumEntries() const
 }
 
 
-bool TranspositionTable::keyIsStored(const ZobristHash& key)
+bool TranspositionTable::keyIsStored(const ZobristHash& key) const
 {
     return _Contains(key);
 }
 
 
-TranspositionTableEntry TranspositionTable::getKey(const ZobristHash& key)
+TranspositionTableEntry TranspositionTable::getKey(const ZobristHash& key) const
 {
     return _Get(key);
 }

@@ -36,7 +36,7 @@ class ChessBot
     std::shared_ptr<ChessBoard> board;
     std::shared_ptr<MoveOrder> move_orderer;
 
-    DurationMs time_limit;
+    std::atomic<int64_t> time_limit_ms{0};
     std::chrono::steady_clock::time_point search_start;
     bool time_up;
     std::atomic<bool> stop_requested{false};
@@ -73,7 +73,7 @@ public:
 
     void SetTimeLimit(DurationMs _time_limit);
     DurationMs GetTimeLimit() const
-    { return time_limit; }
+    { return DurationMs(time_limit_ms.load(std::memory_order_relaxed)); }
 
     inline Evaluation Evaluate()
     { return evaluator.QuiescenceSearch(); }

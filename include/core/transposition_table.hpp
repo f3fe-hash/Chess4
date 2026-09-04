@@ -76,8 +76,8 @@ class TranspositionTable
     Bucket transposition_table[65535];
 
     void _Store(const ZobristHash& key, const TranspositionTableEntry& entry);
-    TranspositionTableEntry _Get(const ZobristHash& key);
-    bool _Contains(const ZobristHash& key);
+    TranspositionTableEntry _Get(const ZobristHash& key) const;
+    bool _Contains(const ZobristHash& key) const;
 
     void setBound(const ZobristHash& key, const Evaluation exact_eval, const int depth, const TranspositionTableBound bound);
 
@@ -88,9 +88,9 @@ public:
 
     size_t GetNumEntries() const;
 
-    bool keyIsStored(const ZobristHash& key);
+    bool keyIsStored(const ZobristHash& key) const;
 
-    TranspositionTableEntry getKey(const ZobristHash& key);
+    TranspositionTableEntry getKey(const ZobristHash& key) const;
     
     void setBestMove(const ZobristHash& key, const Move& move, const int depth);
 

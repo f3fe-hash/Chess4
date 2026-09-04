@@ -16,7 +16,7 @@ ChessBot::~ChessBot()
 
 void ChessBot::SetTimeLimit(DurationMs _time_limit)
 {
-    time_limit = _time_limit;
+    time_limit_ms.store(_time_limit.count(), std::memory_order_relaxed);
 }
 
 
@@ -334,9 +334,10 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
          depth <= max_depth;
          ++depth)
     {
-        if (time_limit.count() > 0 &&
+        const DurationMs current_time_limit = GetTimeLimit();
+        if (current_time_limit.count() > 0 &&
             std::chrono::steady_clock::now() - search_start
-                >= time_limit)
+            >= current_time_limit)
         {
             break;
         }
@@ -361,9 +362,10 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
              move_idx < static_cast<int>(moves.size());
              ++move_idx)
         {
-            if (time_limit.count() > 0 &&
+            const DurationMs current_time_limit = GetTimeLimit();
+            if (current_time_limit.count() > 0 &&
                 std::chrono::steady_clock::now() - search_start
-                    >= time_limit)
+                    >= current_time_limit)
             {
                 depth_completed = false;
                 break;
@@ -469,14 +471,15 @@ Evaluation ChessBot::MainSearch(
             return 0;
         }
 
-        if (time_limit.count() > 0)
+        const DurationMs current_time_limit = GetTimeLimit();
+        if (current_time_limit.count() > 0)
         {
             auto elapsed =
                 std::chrono::duration_cast<DurationMs>(
                     std::chrono::steady_clock::now() -
                     search_start);
 
-            if (elapsed >= time_limit)
+            if (elapsed >= current_time_limit)
             {
                 time_up = true;
                 return 0;

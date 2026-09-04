@@ -313,17 +313,10 @@ bool UCI::FindLegalMove(
 bool UCI::ApplyUCIMove(
     const std::string& move_string)
 {
-    std::cout << "Trying move: " << move_string << '\n';
-
     Move move;
 
     if (!FindLegalMove(move_string, move))
-    {
-        std::cout << "FAILED: " << move_string << '\n';
         return false;
-    }
-
-    std::cout << "Accepted: " << move_string << '\n';
 
     board->MakeMove(move);
 
@@ -334,10 +327,6 @@ bool UCI::ApplyUCIMove(
 bool UCI::SetPosition(
     const std::string& command)
 {
-    std::cout << "Setting position: "
-          << command
-          << '\n';
-    
     std::vector<std::string> tokens =
         Tokenize(command);
 
@@ -447,6 +436,7 @@ std::string UCI::HandleGo(
     bool depth_set = false;
     bool movetime_set = false;
     bool nodes_set = false;
+    bool ponder_search = false;
 
     for (size_t i = 1; i < tokens.size(); ++i)
     {
@@ -547,7 +537,7 @@ std::string UCI::HandleGo(
         }
         else if (token == "ponder")
         {
-            // TODO: proper ponder mode.
+            ponder_search = true;
         }
     }
 
@@ -581,33 +571,13 @@ std::string UCI::HandleGo(
             DurationMs::max();
     }
 
-    // --------------------------------------------------------
-    // Search synchronously.
-    // --------------------------------------------------------
+    ponder_search_time = search_time;
+    if (ponder_search)
+        search_time = DurationMs::max();
 
-    searching.store(true);
-
-    MoveResult result;
-
-    {
-        std::lock_guard<std::mutex> lock(board_mutex);
-
-        bot->SetTimeLimit(search_time);
-
-        result =
-            bot->Search(
-                1,
-                search_depth);
-    }
-
-    searching.store(false);
-
-    /*
-     * UCI requires a bestmove response.
-     */
-    return "bestmove " +
-           MoveToString(result.move) +
-           "\n";
+    pondering.store(ponder_search);
+    StartSearch();
+    return "";
 }
 
 
@@ -673,9 +643,13 @@ void UCI::SearchThread()
             MoveToString(result.move) +
             "\n";
 
-        std::cout << output << std::flush;
+        {
+            std::lock_guard<std::mutex> lock(output_mutex);
+            pending_output += output;
+        }
     }
 
+    pondering.store(false);
     searching.store(false);
 }
 
@@ -684,7 +658,7 @@ std::string UCI::HandleStop()
 {
     StopSearch();
 
-    return "";
+    return TakeOutput();
 }
 
 
@@ -694,7 +668,7 @@ std::string UCI::HandleQuit()
 
     quit_requested.store(true);
 
-    return "";
+    return TakeOutput();
 }
 
 
@@ -702,27 +676,27 @@ std::string UCI::HandleSetOption(
     const std::string& command)
 {
     (void) command;
-    /*
-     * At the moment ChessBot exposes no configurable UCI
-     * options. We still parse the command so GUIs can send
-     * setoption without breaking the protocol.
-     */
-
-    return "option configuration isn't set yet.";
+    return "";
 }
 
 
 std::string UCI::HandlePonderHit()
 {
-    /*
-     * Pondering is not implemented yet.
-     *
-     * A proper implementation needs the search to remain
-     * alive after finding the ponder move and to switch its
-     * clock mode when ponderhit arrives.
-     */
+    if (!pondering.load())
+        return "info string ponderhit without ponder search\n";
 
-    return "ponders aren't implemented yet";
+    pondering.store(false);
+    bot->SetTimeLimit(ponder_search_time);
+    return "";
+}
+
+
+std::string UCI::TakeOutput()
+{
+    std::lock_guard<std::mutex> lock(output_mutex);
+    std::string output;
+    output.swap(pending_output);
+    return output;
 }
 
 

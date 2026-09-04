@@ -26,8 +26,13 @@ class UCI
 
     std::atomic<bool> searching{false};
     std::atomic<bool> quit_requested{false};
+    std::atomic<bool> pondering{false};
+
+    DurationMs ponder_search_time{0};
 
     std::mutex board_mutex;
+    std::mutex output_mutex;
+    std::string pending_output;
 
     // Search parameters.
     int search_depth = 100;
@@ -124,5 +129,7 @@ public:
     {
         return quit_requested.load();
     }
+
+    std::string TakeOutput();
 };
 

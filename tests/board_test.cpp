@@ -2,8 +2,11 @@
 #include "chess.hpp"
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 #include <string>
+
+#include "core/transposition_table.hpp"
 
 
 TEST(Board, StartingPositionMoveCount)
@@ -164,6 +167,65 @@ TEST(Board, CastlingRightsAreLoaded)
     EXPECT_TRUE(std::any_of(moves.begin(), moves.end(), [](const Move& move) {
         return move.flags & MOVE_CASTLE_QUEENSIDE;
     }));
+}
+
+
+TEST(Board, PinnedPieceCannotExposeKing)
+{
+    ChessBoard board;
+    board.LoadFEN("4r1k1/8/8/8/8/8/4R3/4K3 w - - 0 1");
+
+    const std::vector<Move> moves = board.GetLegalMoves();
+    EXPECT_TRUE(std::none_of(moves.begin(), moves.end(), [](const Move& move) {
+        return move.from == E2 && get_piece_x(move.to) != get_piece_x(move.from);
+    }));
+}
+
+
+TEST(Board, RepetitionIncludesInitialPosition)
+{
+    ChessBoard board;
+    board.LoadFEN("1n2k3/8/8/8/8/8/8/N3K3 w - - 0 1");
+
+    auto play = [&](Square from, Square to) {
+        for (Move move : board.GetLegalMoves())
+        {
+            if (move.from == from && move.to == to)
+            {
+                board.MakeMove(move);
+                return;
+            }
+        }
+        FAIL() << "Move was not legal";
+    };
+
+    play(A1, C2);
+    play(B8, C6);
+    play(C2, A1);
+    play(C6, B8);
+    play(A1, C2);
+    play(B8, C6);
+    play(C2, A1);
+    play(C6, B8);
+
+    EXPECT_TRUE(board.IsThreeFoldRepition());
+}
+
+
+TEST(TranspositionTable, ReplacesShallowestEntry)
+{
+    auto table = std::make_unique<TranspositionTable>();
+    constexpr uint64_t bucket = 17;
+
+    for (uint8_t depth = 1; depth <= 8; ++depth)
+        table->setExact(bucket + depth * 65535, depth, depth);
+
+    const uint64_t replacementKey = bucket + 9 * 65535;
+    table->setExact(replacementKey, 99, 0);
+
+    EXPECT_FALSE(table->keyIsStored(bucket + 65535));
+    EXPECT_TRUE(table->keyIsStored(replacementKey));
+    EXPECT_EQ(table->getKey(replacementKey).eval, 99);
 }
 
 

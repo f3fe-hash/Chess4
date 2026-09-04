@@ -232,6 +232,35 @@ void UCIServer::Run()
          */
         while (running)
         {
+            fd_set read_set;
+            FD_ZERO(&read_set);
+            FD_SET(client_socket, &read_set);
+
+            timeval timeout{};
+            timeout.tv_sec = 0;
+            timeout.tv_usec = 100000;
+
+            const int ready = select(
+                client_socket + 1,
+                &read_set,
+                nullptr,
+                nullptr,
+                &timeout);
+
+            const std::string async_output = uci->TakeOutput();
+            if (!async_output.empty() && !Send(async_output))
+                break;
+
+            if (ready < 0)
+            {
+                if (errno == EINTR)
+                    continue;
+                break;
+            }
+
+            if (ready == 0)
+                continue;
+
             std::string command = ReceiveLine();
 
             if (command.empty())
