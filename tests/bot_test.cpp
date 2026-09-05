@@ -43,6 +43,39 @@ TEST(Bot, BlackSearchTakesFreeQueen)
 }
 
 
+TEST(Bot, BlackFindsMateInOneAndGetsMateScore)
+{
+    auto board = std::make_shared<ChessBoard>();
+    board->LoadFEN("6r1/8/8/8/8/8/4q3/7K b - - 0 1");
+
+    Move mate_move{};
+    for (const Move move : board->GetLegalMoves())
+    {
+        if (move.from == E2 && move.to == G2)
+        {
+            mate_move = move;
+            break;
+        }
+    }
+    ASSERT_EQ(mate_move.from, E2);
+    ASSERT_EQ(mate_move.to, G2);
+    board->MakeMove(mate_move);
+    EXPECT_TRUE(board->IsCheckMate());
+    board->UndoMove(mate_move);
+
+    ChessBot bot(board);
+    bot.SetTimeLimit(DurationMs(0));
+
+    const MoveResult result = bot.Search(1, 1);
+
+    ASSERT_TRUE(board->IsLegalMove(result.move));
+    EXPECT_EQ(result.move.from, E2);
+    EXPECT_EQ(result.move.to, G2);
+    EXPECT_EQ(result.mate_in_ply, 1);
+    EXPECT_LT(result.eval, -CHECKMATE_SCORE + 10);
+}
+
+
 TEST(Bot, DoesNotPlayQueenIntoKingCapture)
 {
     auto board = std::make_shared<ChessBoard>();

@@ -327,7 +327,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
     // Iterative deepening.
     // --------------------------------------------------------
 
-    int64_t mate_in_ply = -2;
+    int64_t mate_in_ply = INT64_MAX;
 
     for (int depth = min_depth;
          depth <= max_depth;
@@ -378,7 +378,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                 move:           moves[move_idx],
                 move_idx:       move_idx,
                 is_root_search: true,
-                mate_in:        -2
+                mate_in:        INT_MAX
             };
 
             const Evaluation eval = SearchCore(params);
@@ -508,11 +508,8 @@ Evaluation ChessBot::MainSearch(
         {
             // Side to move has been checkmated.
             //
-            // White is maximizing:
-            //     White being mated = very bad.
-            //
-            // Black is minimizing:
-            //     Black being mated = very good.
+            // White being mated is bad for white, while black being
+            // mated is good for white. Scores are white-centric.
             //
             // The ply adjustment makes the engine prefer:
             //
