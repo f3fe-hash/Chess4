@@ -166,9 +166,13 @@ class UCIClient:
     # Search
     # --------------------------------------------------------
 
-    def go(self, movetime_ms=ENGINE_MOVE_TIME_MS):
+    def go(self, wtime_ms, btime_ms, increment_ms):
         return self.send(
-            f"go movetime {max(1, int(movetime_ms))}"
+            "go "
+            f"wtime {max(0, int(wtime_ms))} "
+            f"btime {max(0, int(btime_ms))} "
+            f"winc {max(0, int(increment_ms))} "
+            f"binc {max(0, int(increment_ms))}"
         )
 
     def stop(self):

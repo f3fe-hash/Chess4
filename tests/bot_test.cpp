@@ -40,6 +40,7 @@ TEST(Bot, BlackSearchTakesFreeQueen)
     ASSERT_TRUE(board->IsLegalMove(result.move));
     EXPECT_EQ(result.move.from, D8);
     EXPECT_EQ(result.move.to, D4);
+    EXPECT_EQ(result.mate_in_ply, -2);
 }
 
 

@@ -514,7 +514,7 @@ std::string UCI::HandleGo(
     if (!movetime_set &&
         !depth_set &&
         !nodes_set &&
-        !infinite_search)
+        !infinite_search) 
     {
         search_time =
             bot->CalculateThinkTime(

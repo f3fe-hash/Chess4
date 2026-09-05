@@ -51,70 +51,84 @@ const
     const DurationMs increment =
         white_to_move ? winc : binc;
 
-    if (current_time.count() <= 0)
+    const int64_t time = current_time.count();
+
+    if (time <= 0)
         return DurationMs(1);
 
-    // Determine which part of the game we're in based on
-    // how much of our original clock remains.
-    double time_remaining_ratio = 1.0;
+    // --------------------------------------------------------
+    // Base time allocation
+    //
+    // 15 minutes remaining -> ~10 seconds
+    // 10 minutes remaining -> ~7 seconds
+    //  5 minutes remaining -> ~5 seconds
+    //  1 minute remaining  -> ~2 seconds
+    // --------------------------------------------------------
 
-    if (original_time.count() > 0)
+    double time_fraction;
+
+    if (time > 10 * 60 * 1000)
     {
-        time_remaining_ratio =
-            static_cast<double>(current_time.count()) /
-            static_cast<double>(original_time.count());
+        // Lots of time.
+        time_fraction = 1.0 / 90.0;
     }
-
-    double time_fraction = 0.0;
-
-    if (time_remaining_ratio > 2.0 / 3.0)
+    else if (time > 5 * 60 * 1000)
     {
-        // Opening.
-        time_fraction = 1.0 / 120.0;
+        time_fraction = 1.0 / 75.0;
     }
-    else if (time_remaining_ratio > 1.0 / 3.0)
+    else if (time > 2 * 60 * 1000)
     {
-        // Middlegame.
         time_fraction = 1.0 / 60.0;
     }
     else
     {
-        // Endgame / low clock.
-        time_fraction = 1.0 / 240.0;
+        time_fraction = 1.0 / 45.0;
     }
 
-    auto think_time =
-        static_cast<int64_t>(
-            current_time.count() * time_fraction);
+    int64_t think_time =
+        static_cast<int64_t>(time * time_fraction);
 
-    // If we're significantly behind on time, be more conservative.
-    double clock_ratio = 1.0;
+    // --------------------------------------------------------
+    // Adjust based on opponent's remaining time.
+    // --------------------------------------------------------
 
     if (opponent_time.count() > 0)
     {
-        clock_ratio =
-            static_cast<double>(current_time.count()) /
+        const double clock_ratio =
+            static_cast<double>(time) /
             static_cast<double>(opponent_time.count());
+
+        if (clock_ratio < 0.5)
+        {
+            // We're badly behind on time.
+            think_time = static_cast<int64_t>(
+                think_time * 0.75
+            );
+        }
+        else if (clock_ratio > 2.0)
+        {
+            // We have substantially more time.
+            think_time = static_cast<int64_t>(
+                think_time * 1.25
+            );
+        }
     }
 
-    if (clock_ratio < 0.5)
-        think_time *= 0.75;
-    else if (clock_ratio > 2.0)
-        think_time *= 1.25;
+    // --------------------------------------------------------
+    // Add part of the increment.
+    // --------------------------------------------------------
 
-    // Use part of the increment as additional thinking time.
-    //
-    // This makes increments useful without allowing the engine
-    // to spend the entire increment every move.
     constexpr double INCREMENT_FRACTION = 0.5;
 
     think_time += static_cast<int64_t>(
         increment.count() * INCREMENT_FRACTION
     );
 
-    // If we have more than 60 seconds, there is no point in going super fast. The engine can most likely win.
-    int64_t MIN_THINK_TIME_MS = (current_time < DurationMs(60000)) ? 50 : 1000;
+    // --------------------------------------------------------
+    // Limits.
+    // --------------------------------------------------------
 
+    constexpr int64_t MIN_THINK_TIME_MS = 1000;
     constexpr int64_t MAX_THINK_TIME_MS = 15000;
 
     think_time = std::clamp(
@@ -123,10 +137,18 @@ const
         MAX_THINK_TIME_MS
     );
 
-    // Leave a small safety margin on the clock.
+    // --------------------------------------------------------
+    // Safety margin.
+    // --------------------------------------------------------
+
+    constexpr int64_t SAFETY_MARGIN_MS = 100;
+
     think_time = std::min(
         think_time,
-        std::max<int64_t>(1, current_time.count() - 10)
+        std::max<int64_t>(
+            1,
+            time - SAFETY_MARGIN_MS
+        )
     );
 
     return DurationMs(
@@ -378,7 +400,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                 move:           moves[move_idx],
                 move_idx:       move_idx,
                 is_root_search: true,
-                mate_in:        INT_MAX
+                mate_in:        INT64_MAX
             };
 
             const Evaluation eval = SearchCore(params);
@@ -436,7 +458,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
     best_move.nodes_searched =
         nodes_searched.load(std::memory_order_relaxed);
     best_move.depth = best_depth;
-    best_move.mate_in_ply = mate_in_ply;
+    best_move.mate_in_ply =
+        mate_in_ply == INT64_MAX ? -2 : mate_in_ply;
 
     return best_move;
 }
@@ -451,7 +474,7 @@ Evaluation ChessBot::MainSearch(
     Evaluation beta,
     int depth,
     int ply,
-    int& mate_in_ply
+    int64_t& mate_in_ply
 )
 {
     const uint64_t current_node =

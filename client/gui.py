@@ -951,8 +951,11 @@ class ChessGUI:
             "Engine thinking..."
         )
 
-        engine_time = min(1000, int(self.black_time * 1000))
-        if not self.client.go(engine_time):
+        if not self.client.go(
+            self.white_time * 1000,
+            self.black_time * 1000,
+            self.increment * 1000
+        ):
             self.engine_thinking = False
 
             self.set_status(
