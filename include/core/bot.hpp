@@ -19,10 +19,11 @@
 
 struct MoveResult
 {
-    Move move;
-    Evaluation eval;
-    uint64_t nodes_searched;
-    int depth;
+    Move move{};
+    Evaluation eval = 0.00;
+    uint64_t nodes_searched = 0;
+    int64_t mate_in_ply = -2; // < 0 means no mate was found
+    int depth = 0;
 };
 
 
@@ -50,12 +51,7 @@ class ChessBot
         return board->GetZobristHash();
     }
 
-    inline bool ShouldStop() const
-    {
-        return stop_requested.load();
-    }
-
-    Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply);
+    Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply, int& mate_in);
     Evaluation SearchCore(
         Evaluation alpha,
         Evaluation beta,
@@ -63,7 +59,8 @@ class ChessBot
         int ply,
         Move move,
         int move_idx,
-        bool is_root_search);
+        bool is_root_search,
+        int& mate_in);
 
     int DepthExtension(const Move& move);
 

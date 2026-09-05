@@ -216,40 +216,6 @@ std::string UCI::MoveToString(const Move& move) const
 }
 
 
-Move UCI::StringToMove(const std::string& string)
-{
-    Move move{};
-
-    move.from = flatten_xy(
-        string[0] - 'a',
-        string[1] - '1');
-
-    move.to = flatten_xy(
-        string[2] - 'a',
-        string[3] - '1');
-
-    move.moved =
-        board->GetPieceAt(move.from);
-
-    move.captured =
-        board->GetPieceAt(move.to);
-
-    move.promotion = NULL_PIECE;
-
-    if (string.size() >= 5)
-    {
-        move.promotion =
-            CharToPromotion(
-                string[4],
-                board->GetTurnColor());
-    }
-
-    move.flags = MOVE_NORMAL;
-
-    return move;
-}
-
-
 bool UCI::FindLegalMove(
     const std::string& string,
     Move& result)
@@ -649,6 +615,23 @@ void UCI::SearchThread()
         }
     }
 
+    // Print useful debug output
+    std::cerr
+        << "[move " << MoveToString(result.move) << "] ";
+    
+    // If a mate was found, print it.
+    if (result.mate_in_ply >= 0)
+    {
+        std::cerr
+            << "[mate" << result.mate_in_ply << "] ";
+    }
+    
+    std::cerr
+        << "[depth " << result.depth << "] "
+        << "[evaluation " << std::fixed << std::setprecision(2) << result.eval / 100 << "] "
+        << "[nodes " << result.nodes_searched << "]"
+        << '\n';
+
     pondering.store(false);
     searching.store(false);
 }
@@ -739,9 +722,8 @@ std::string UCI::Respond(
     else if (command == "ponderhit")
         return HandlePonderHit();
 
-    // UCI GUIs sometimes send debug commands.
     if (command == "debug")
-        return "idk this isnt implemented";
+        return "";
 
     return "info string unknown command " + command + "\n";
 }

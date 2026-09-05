@@ -340,17 +340,6 @@ Evaluation ChessBoardEvaluator::ComputeMopupBonus()
         int king_distance =
             chebyshev_distance(white_king, black_king);
 
-        //int major_distance = 8;
-
-        //for (Square major : white_majors)
-        //{
-        //    major_distance =
-        //        std::min(
-        //            major_distance,
-        //            chebyshev_distance(major, black_king)
-        //        );
-        //}
-
         //
         // 1. Force the enemy king toward the edge.
         //
@@ -372,9 +361,6 @@ Evaluation ChessBoardEvaluator::ComputeMopupBonus()
         // A major piece close to the enemy king is more likely
         // to get attacked.
         //
-        //white_bonus +=
-        //    major_distance * 10;
-
         //
         // 4. Extra major material.
         //
@@ -397,17 +383,6 @@ Evaluation ChessBoardEvaluator::ComputeMopupBonus()
         int king_distance =
             chebyshev_distance(black_king, white_king);
 
-        //int major_distance = 8;
-
-        //for (Square major : black_majors)
-        //{
-        //    major_distance =
-        //        std::min(
-        //           major_distance,
-        //            chebyshev_distance(major, white_king)
-        //        );
-        //}
-
         //
         // Force the enemy king toward the edge.
         //
@@ -423,9 +398,6 @@ Evaluation ChessBoardEvaluator::ComputeMopupBonus()
         //
         // Keep the rook/queen away from the enemy king.
         //
-        //black_bonus +=
-        //    major_distance * 10;
-
         //
         // Extra major material.
         //
@@ -458,6 +430,27 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
 
     Evaluation eval_white = 0;
     Evaluation eval_black = 0;
+    Evaluation material_balance = 0;
+
+    for (Square square = 0; square < 64; ++square)
+    {
+        const Piece piece = board->GetPieceAt(square);
+        const Evaluation value = [&]() -> Evaluation
+        {
+            switch (piece & 0x07)
+            {
+                case PIECE_TYPE_PAWN: return PAWN_VALUE_OP;
+                case PIECE_TYPE_KNIGHT: return KNIGHT_VALUE_OP;
+                case PIECE_TYPE_BISHOP: return BISHOP_VALUE_OP;
+                case PIECE_TYPE_ROOK: return ROOK_VALUE_OP;
+                case PIECE_TYPE_QUEEN: return QUEEN_VALUE_OP;
+                default: return 0;
+            }
+        }();
+
+        material_balance +=
+            (piece & PIECE_COLOR_WHITE) ? value : -value;
+    }
 
     // ------------------------------------------------------------
     // White evaluation.
@@ -465,7 +458,6 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
 
     board->SetTurnColor(TURN_WHITE);
 
-    eval_white += PIECE_VALUE_MULTIPLIER    * EvaluatePieceValues();
     eval_white += PST_EVAL_MULTIPLIER       * EvaluatePSTs();
     eval_white += MOBILITY_MULTIPLIER       * EvaluateMobility();
 
@@ -478,7 +470,6 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
 
     board->SetTurnColor(TURN_BLACK);
 
-    eval_black += PIECE_VALUE_MULTIPLIER    * EvaluatePieceValues();
     eval_black += PST_EVAL_MULTIPLIER       * EvaluatePSTs();
     eval_black += MOBILITY_MULTIPLIER       * EvaluateMobility();
 
@@ -488,7 +479,7 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
     // Restore original turn.
     board->SetTurnColor(turn);
 
-    Evaluation base = eval_white - eval_black;
+    Evaluation base = material_balance + eval_white - eval_black;
 
     // Mop-up is more useful in the endgame, and is really expensive to calculate.
     if (IsEndgame())
@@ -514,9 +505,10 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
     if (board->IsCheck())
     {
         auto moves = board->GetLegalMoves();
+        const bool maximizing = board->GetTurnColor() == TURN_WHITE;
 
         if (moves.empty())
-            return -CHECKMATE_SCORE;
+            return maximizing ? -CHECKMATE_SCORE : CHECKMATE_SCORE;
 
         move_orderer->OrderMoves(moves, 0);
 
@@ -530,24 +522,41 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
 
             board->UndoMove(move);
 
-            if (score >= beta)
-                return score;
-
-            alpha = std::max(alpha, score);
+            if (maximizing)
+            {
+                if (score >= beta)
+                    return score;
+                alpha = std::max(alpha, score);
+            }
+            else
+            {
+                if (score <= alpha)
+                    return score;
+                beta = std::min(beta, score);
+            }
         }
 
-        return alpha;
+        return maximizing ? alpha : beta;
     }
 
     const Evaluation stand_pat = EvaluatePosition();
+    const bool maximizing = board->GetTurnColor() == TURN_WHITE;
 
     if (depth <= 0)
         return stand_pat;
 
-    if (stand_pat >= beta)
-        return stand_pat;
-
-    alpha = std::max(alpha, stand_pat);
+    if (maximizing)
+    {
+        if (stand_pat >= beta)
+            return stand_pat;
+        alpha = std::max(alpha, stand_pat);
+    }
+    else
+    {
+        if (stand_pat <= alpha)
+            return stand_pat;
+        beta = std::min(beta, stand_pat);
+    }
 
     auto captures = board->GetLegalCaptures();
 
@@ -563,13 +572,21 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
 
         board->UndoMove(move);
 
-        if (score >= beta)
-            return score;
-
-        alpha = std::max(alpha, score);
+        if (maximizing)
+        {
+            if (score >= beta)
+                return score;
+            alpha = std::max(alpha, score);
+        }
+        else
+        {
+            if (score <= alpha)
+                return score;
+            beta = std::min(beta, score);
+        }
     }
 
-    return alpha;
+    return maximizing ? alpha : beta;
 }
 
 

@@ -8,12 +8,21 @@ from config import (
     LIGHT_SQUARE,
     DARK_SQUARE,
     SELECT_SQUARE,
-    PIECE_FONT,
+    USE_UCICODE_PIECES,
     COORDINATE_FONT,
-    UNICODE_PIECES,
 )
-from uci_client import UCIClient
 
+if USE_UCICODE_PIECES:
+    from config import (
+        UNICODE_PIECES,
+        PIECE_FONT
+    )
+else:
+    from config import (
+        PIECES_TO_FILE
+    )
+
+from uci_client import UCIClient
 
 class ChessGUI:
     def __init__(self, root, server_host, server_port):
@@ -252,13 +261,20 @@ class ChessGUI:
                 piece = self.board.board[row][col]
 
                 if piece is not None:
-                    self.canvas.create_text(
-                        x1 + SQUARE_SIZE // 2,
-                        y1 + SQUARE_SIZE // 2,
-                        text=UNICODE_PIECES[piece],
-                        font=PIECE_FONT,
-                        fill="black"
-                    )
+                    if USE_UCICODE_PIECES:
+                        self.canvas.create_text(
+                            x1 + SQUARE_SIZE // 2,
+                            y1 + SQUARE_SIZE // 2,
+                            text=UNICODE_PIECES[piece], # type: ignore
+                            font=PIECE_FONT, # type: ignore
+                            fill="black"
+                        )
+                    else:
+                        self.canvas.create_image(
+                            x1 + SQUARE_SIZE // 2,
+                            y1 + SQUARE_SIZE // 2,
+                            image=PIECES_TO_FILE[piece] # type: ignore
+                        )
 
         self.draw_coordinates()
 
@@ -366,13 +382,20 @@ class ChessGUI:
 
         self.draw_board()
 
-        self.canvas.create_text(
-            event.x,
-            event.y,
-            text=UNICODE_PIECES[self.drag_piece],
-            font=PIECE_FONT,
-            fill="black"
-        )
+        if USE_UCICODE_PIECES:
+            self.canvas.create_text(
+                event.x,
+                event.y,
+                text=UNICODE_PIECES[self.drag_piece], # type: ignore
+                font=PIECE_FONT, # type: ignore
+                fill="black"
+            )
+        else:
+            self.canvas.create_image(
+                event.x,
+                event.y,
+                file=PIECES_TO_FILE[self.drag_piece] # type: ignore
+            )
 
     # ========================================================
     # Mouse Up

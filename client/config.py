@@ -28,3 +28,21 @@ UNICODE_PIECES = {
     "q": "♛",
     "k": "♚",
 }
+
+PIECES_TO_FILE = {
+    "P": "pieces-png/white-pawn.png",
+    "N": "pieces-png/white-pawn.png",
+    "B": "pieces-png/white-pawn.png",
+    "R": "pieces-png/white-pawn.png",
+    "Q": "pieces-png/white-pawn.png",
+    "K": "pieces-png/white-pawn.png",
+
+    "p": "pieces-png/black-pawn.png",
+    "n": "pieces-png/black-pawn.png",
+    "b": "pieces-png/black-pawn.png",
+    "r": "pieces-png/black-pawn.png",
+    "q": "pieces-png/black-pawn.png",
+    "k": "pieces-png/black-pawn.png",
+}
+
+USE_UCICODE_PIECES = True

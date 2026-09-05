@@ -1,1 +1,4 @@
 build
+.vscode
+.venv
+client/__pycache__

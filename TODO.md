@@ -45,3 +45,22 @@ Remaining:
 	bishop piece-square table against it.
 2. Add protocol integration coverage using a real TCP client against
 	`UCIServer`, including asynchronous `bestmove` delivery.
+
+## 5. Improve Client UI
+Improve the Python client-side (in `client/`). Piece png images are in `client/pieces-png`.
+
+1. Make it look better
+2. Use chess piece images instead of UNICODE chess pieces
+3. Timed matches (for example ten minutes vs. ten minutes no increment, etc.).
+    Make a variety, such as (white to black time): 
+        blitz (1m-1m 1s increment),
+        bullet (3m-3m 0s increment),
+        casual (15-15 10s increment),
+        slow-fast (10m-1m 5ss increment)
+
+4. Reconnect and other control buttons.
+
+
+
+
+It's a lot better. Can you improve the Python-side of the app (the client)? Such as making it look better, better piece displays, more control buttons, time display, reconnect button, etc.? I have downloaded a ton of piece pngs that are transparent in the `client/pieces-png` folder.

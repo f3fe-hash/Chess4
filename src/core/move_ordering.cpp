@@ -24,7 +24,7 @@ Evaluation MoveOrder::MoveOrderScore(
 {
     constexpr Evaluation TT_MOVE_DEPTH_BONUS = 300.0;
 
-    Evaluation score;
+    Evaluation score = 0;
 
     // Don't award too much evaluation to a best move in the transposition
     // table. Although it is probably accurate, award more evaluation based
@@ -34,7 +34,7 @@ Evaluation MoveOrder::MoveOrderScore(
 
     // No piece was captured.
     if (move.captured == NULL_PIECE)
-        return 0;
+        return score;
 
     Evaluation victim = PieceValue(move.captured);
     Evaluation attacker = PieceValue(move.moved);
@@ -65,7 +65,7 @@ void MoveOrder::OrderMoves(std::vector<Move>& moves, int depth) const
     // Compute score once per move
     struct Scored {
         Move m;
-        int score;
+        Evaluation score;
     };
 
     std::vector<Scored> tmp;
@@ -74,7 +74,7 @@ void MoveOrder::OrderMoves(std::vector<Move>& moves, int depth) const
     for (const Move& m : moves)
     {
         // Score should incorporate:
-        int score = MoveOrderScore(m, tt_move, depth);
+        Evaluation score = MoveOrderScore(m, tt_move, depth);
         tmp.push_back({m, score});
     }
 

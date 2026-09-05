@@ -87,7 +87,6 @@ class UCI
 
     bool ApplyUCIMove(const std::string& string);
 
-    Move StringToMove(const std::string& string);
     std::string MoveToString(const Move& move) const;
 
     // Find the actual legal engine move corresponding to UCI notation.

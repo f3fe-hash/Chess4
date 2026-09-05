@@ -131,13 +131,6 @@ const
 // Mate-score helpers.
 // ------------------------------------------------------------
 
-static inline bool IsMateScore(Evaluation score)
-{
-    return score >= CHECKMATE_SCORE - 10000 ||
-           score <= -CHECKMATE_SCORE + 10000;
-}
-
-
 // Convert a score such as:
 //
 //     CHECKMATE_SCORE - ply
@@ -209,7 +202,8 @@ Evaluation ChessBot::SearchCore(
     int ply,
     Move move,
     int move_idx,
-    bool is_root_search)
+    bool is_root_search,
+    int& mate_in)
 {
     // --------------------------------------------------------
     // Make the move.
@@ -231,7 +225,7 @@ Evaluation ChessBot::SearchCore(
 
 
     bool endgame = evaluator.IsEndgame();
-    if ((extension == 0) && !is_root_search)
+    if ((extension == 0) && !is_root_search && depth >= 4)
     {
         if (!endgame)
         {
@@ -268,7 +262,8 @@ Evaluation ChessBot::SearchCore(
             alpha,
             beta,
             search_depth,
-            ply + 1
+            ply + 1,
+            mate_in
         );
 
     board->UndoMove(move);
@@ -286,15 +281,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
     // Checkmate / stalemate
     if (board->IsCheckMate() || board->IsStaleMate())
     {
-        Move move;
-        move.to = 0;
-        move.from = 0;
-
-        MoveResult result;
-        result.move = move;
-        result.eval = 0;
-        result.nodes_searched = 0;
-        result.depth = 0;
+        // Auto-initialized to default values
+        MoveResult result{};
 
         return result;
     }
@@ -306,14 +294,13 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
     std::vector<Move> moves = board->GetLegalMoves();
 
+    // Auto-initialized to default values
     MoveResult best_move{};
 
     if (moves.empty())
     {
         // There is no legal move. There is no move to return.
         best_move.nodes_searched = nodes_searched;
-        best_move.depth = 0;
-        best_move.eval = 0;
 
         return best_move;
     }
@@ -329,6 +316,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
     // --------------------------------------------------------
     // Iterative deepening.
     // --------------------------------------------------------
+
+    int64_t mate_in_ply = -2;
 
     for (int depth = min_depth;
          depth <= max_depth;
@@ -379,6 +368,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
             // SearchCore makes the move and calls MainSearch
             // at ply 1.
             //
+            int _mate_in = 0;
             Evaluation eval =
                 SearchCore(
                     alpha,
@@ -387,8 +377,13 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                     0,
                     move,
                     move_idx,
-                    true
+                    true,
+                    _mate_in
                 );
+            
+            // Tracking fastest mate.
+            if (_mate_in < mate_in_ply)
+                mate_in_ply = _mate_in;
 
             if (time_up)
             {
@@ -423,9 +418,11 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
             // Normally this cannot happen at the root because
             // alpha starts at -INF and beta starts at +INF,
-            // but keeping the cutoff is harmless.
-            if (alpha >= beta)
-                break;
+            // but keeping the cutoff is harmless. However,
+            // it is commented out.
+            //
+            //if (alpha >= beta)
+            //    break;
         }
 
         // Only accept a completely searched iteration.
@@ -433,6 +430,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         {
             best_move = depth_move;
             best_depth = depth;
+
+            best_move.eval = std::max(best_move.eval, depth_eval);
         }
         else
         {
@@ -442,6 +441,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
     best_move.nodes_searched = nodes_searched;
     best_move.depth = best_depth;
+    best_move.mate_in_ply = mate_in_ply;
 
     return best_move;
 }
@@ -455,7 +455,9 @@ Evaluation ChessBot::MainSearch(
     Evaluation alpha,
     Evaluation beta,
     int depth,
-    int ply)
+    int ply,
+    int& mate_in_ply
+)
 {
     ++nodes_searched;
 
@@ -499,7 +501,7 @@ Evaluation ChessBot::MainSearch(
     bool maximizing = board->GetTurnColor() == TURN_WHITE;
 
     // --------------------------------------------------------
-    // Checkmate / draws.
+    // Checkmate / stalemate.
     // --------------------------------------------------------
 
     if (moves.empty())
@@ -522,6 +524,9 @@ Evaluation ChessBot::MainSearch(
             //
             //     being mated as quickly as possible.
 
+            if (ply < mate_in_ply)
+                mate_in_ply = ply;
+
             if (maximizing)
             {
                 return -CHECKMATE_SCORE + ply;
@@ -536,16 +541,12 @@ Evaluation ChessBot::MainSearch(
         return 0;
     }
 
-    // 3-fold repition
-    //if (board->IsThreeFoldRepition())
-    //    return 0;
-
     // --------------------------------------------------------
     // Leaf evaluation.
     // --------------------------------------------------------
 
     if (depth <= 0)
-        return evaluator.EvaluatePosition();
+        return evaluator.QuiescenceSearch();
 
     // --------------------------------------------------------
     // Position key.
@@ -595,12 +596,6 @@ Evaluation ChessBot::MainSearch(
 
     move_orderer->OrderMoves(moves, depth);
 
-    // Save the original alpha/beta values.
-    //
-    // These are useful for determining the TT bound.
-    //const Evaluation original_alpha = alpha;
-    //const Evaluation original_beta  = beta;
-
     Evaluation best_eval;
 
     // --------------------------------------------------------
@@ -625,7 +620,8 @@ Evaluation ChessBot::MainSearch(
                     ply,
                     move,
                     move_idx,
-                    false
+                    false,
+                    mate_in_ply
                 );
 
             if (time_up)
@@ -681,7 +677,8 @@ Evaluation ChessBot::MainSearch(
                     ply,
                     move,
                     move_idx,
-                    false
+                    false,
+                    mate_in_ply
                 );
 
             if (time_up)
