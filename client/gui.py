@@ -1,7 +1,10 @@
 import tkinter as tk
+import threading
 from tkinter import messagebox
 from pathlib import Path
 from time import monotonic
+
+from PIL import Image, ImageTk
 
 from board import ChessBoard
 from config import (
@@ -64,13 +67,22 @@ class ChessGUI:
         self.clock_started = False
         self.last_clock_update = monotonic()
 
+        self.source_piece_images = {}
         self.piece_images = {}
         if not USE_UCICODE_PIECES:
             asset_root = Path(__file__).parent
             for piece, filename in PIECES_TO_FILE.items():
-                self.piece_images[piece] = tk.PhotoImage(
-                    file=str(asset_root / filename)
-                ).subsample(2, 2)
+                self.source_piece_images[piece] = Image.open(
+                    asset_root / filename
+                ).convert("RGBA")
+
+        self.update_piece_images()
+
+        if not USE_UCICODE_PIECES:
+            self.piece_images = {
+                piece: ImageTk.PhotoImage(image)
+                for piece, image in self.source_piece_images.items()
+            }
 
         self.root.configure(bg="#20252b")
 
@@ -259,14 +271,25 @@ class ChessGUI:
     # ========================================================
 
     def connect(self):
-        if self.client.connect():
-            self.set_status(
+        if self.client.connected:
+            self.set_status("Connected. Initializing UCI...")
+            return
+
+        self.set_status("Connecting...")
+        threading.Thread(
+            target=self._connect_in_background,
+            daemon=True
+        ).start()
+
+    def _connect_in_background(self):
+        connected = self.client.connect()
+        self.root.after(
+            0,
+            lambda: self.set_status(
                 "Connected. Initializing UCI..."
+                if connected else "Unable to connect."
             )
-        else:
-            self.set_status(
-                "Unable to connect."
-            )
+        )
 
     def reconnect(self):
         self.client.close()
@@ -407,7 +430,23 @@ class ChessGUI:
         self.board_size = board_size
         self.square_size = board_size / 8
         self.canvas.configure(width=board_size, height=board_size)
+        self.update_piece_images()
         self.draw_board()
+
+    def update_piece_images(self):
+        if USE_UCICODE_PIECES:
+            return
+
+        piece_size = max(1, int(self.square_size * 0.9))
+        self.piece_images = {
+            piece: ImageTk.PhotoImage(
+                image.resize(
+                    (piece_size, piece_size),
+                    Image.Resampling.LANCZOS
+                )
+            )
+            for piece, image in self.source_piece_images.items()
+        }
 
     def draw_board(self):
         self.canvas.delete("all")

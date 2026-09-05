@@ -34,7 +34,7 @@ class UCIClient:
                 socket.SOCK_STREAM
             )
 
-            sock.settimeout(None)
+            sock.settimeout(5)
 
             sock.connect(
                 (self.host, self.port)
