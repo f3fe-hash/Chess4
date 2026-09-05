@@ -164,10 +164,13 @@ class UCIClient:
     # Search
     # --------------------------------------------------------
 
-    def go(self):
+    def go(self, movetime_ms=ENGINE_MOVE_TIME_MS):
         return self.send(
-            f"go movetime {ENGINE_MOVE_TIME_MS}"
+            f"go movetime {max(1, int(movetime_ms))}"
         )
+
+    def stop(self):
+        return self.send("stop")
 
     # --------------------------------------------------------
     # New game
@@ -189,14 +192,6 @@ class UCIClient:
     # --------------------------------------------------------
 
     def _close_socket(self):
-        if self.reader is not None:
-            try:
-                self.reader.close()
-            except Exception:
-                pass
-
-            self.reader = None
-
         if self.socket is not None:
             try:
                 self.socket.shutdown(socket.SHUT_RDWR)
@@ -209,3 +204,11 @@ class UCIClient:
                 pass
 
             self.socket = None
+
+        if self.reader is not None:
+            try:
+                self.reader.close()
+            except Exception:
+                pass
+
+            self.reader = None

@@ -3,6 +3,15 @@ SERVER_PORT = 8080
 
 ENGINE_MOVE_TIME_MS = 1000
 
+TIME_CONTROLS = {
+    "Blitz 1+1": (60, 60, 1),
+    "Bullet 3+0": (180, 180, 0),
+    "Casual 15+10": (900, 900, 10),
+    "Slow-fast 10+5 vs 1+5": (600, 60, 5),
+}
+
+DEFAULT_TIME_CONTROL = "Blitz 1+1"
+
 BOARD_SIZE = 640
 SQUARE_SIZE = BOARD_SIZE // 8
 
@@ -11,7 +20,7 @@ DARK_SQUARE = "#b58863"
 SELECT_SQUARE = "#ffff66"
 
 PIECE_FONT = ("DejaVu Sans", 48)
-COORDINATE_FONT = ("DejaVu Sans", 9)
+COORDINATE_FONT = ("DejaVu Sans", 9, "bold")
 
 UNICODE_PIECES = {
     "P": "♙",
@@ -31,18 +40,18 @@ UNICODE_PIECES = {
 
 PIECES_TO_FILE = {
     "P": "pieces-png/white-pawn.png",
-    "N": "pieces-png/white-pawn.png",
-    "B": "pieces-png/white-pawn.png",
-    "R": "pieces-png/white-pawn.png",
-    "Q": "pieces-png/white-pawn.png",
-    "K": "pieces-png/white-pawn.png",
+    "N": "pieces-png/white-knight.png",
+    "B": "pieces-png/white-bishop.png",
+    "R": "pieces-png/white-rook.png",
+    "Q": "pieces-png/white-queen.png",
+    "K": "pieces-png/white-king.png",
 
     "p": "pieces-png/black-pawn.png",
-    "n": "pieces-png/black-pawn.png",
-    "b": "pieces-png/black-pawn.png",
-    "r": "pieces-png/black-pawn.png",
-    "q": "pieces-png/black-pawn.png",
-    "k": "pieces-png/black-pawn.png",
+    "n": "pieces-png/black-knight.png",
+    "b": "pieces-png/black-bishop.png",
+    "r": "pieces-png/black-rook.png",
+    "q": "pieces-png/black-queen.png",
+    "k": "pieces-png/black-king.png",
 }
 
-USE_UCICODE_PIECES = True
+USE_UCICODE_PIECES = False

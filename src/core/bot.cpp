@@ -112,7 +112,9 @@ const
         increment.count() * INCREMENT_FRACTION
     );
 
-    constexpr int64_t MIN_THINK_TIME_MS = 50;
+    // If we have more than 60 seconds, there is no point in going super fast. The engine can most likely win.
+    int64_t MIN_THINK_TIME_MS = (current_time < DurationMs(60000)) ? 50 : 1000;
+
     constexpr int64_t MAX_THINK_TIME_MS = 15000;
 
     think_time = std::clamp(
