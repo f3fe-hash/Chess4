@@ -254,6 +254,14 @@ class ChessGUI:
         )
         self.resign_button.pack(fill="x", pady=(20, 0))
 
+        self.quit_button = tk.Button(
+            self.control_frame, text="Quit", command=self.close,
+            bg="#3a424b", fg="#f4f1ea", activebackground="#56616d",
+            relief="flat", padx=10, pady=8,
+            font=("DejaVu Sans", 12, "bold")
+        )
+        self.quit_button.pack(fill="x", pady=(6, 0))
+
         self.update_control_sizes()
 
         # ----------------------------------------------------
@@ -481,7 +489,7 @@ class ChessGUI:
             button_font_size > 10
             and max(
                 button_font_measure.measure(label)
-                for label in ("New game", "Reconnect", "Resign")
+                for label in ("New game", "Reconnect", "Resign", "Quit")
             ) > available_width - (horizontal_padding * 2)
         ):
             button_font_size -= 1
@@ -492,7 +500,8 @@ class ChessGUI:
         for button in (
             self.new_game_button,
             self.reconnect_button,
-            self.resign_button
+            self.resign_button,
+            self.quit_button
         ):
             button.configure(
                 font=button_font,
