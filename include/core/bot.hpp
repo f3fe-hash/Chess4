@@ -52,15 +52,17 @@ class ChessBot
 
     std::atomic<int64_t> time_limit_ms{0};
     std::chrono::steady_clock::time_point search_start;
-    bool time_up;
+    bool time_up = false;
     std::atomic<bool> stop_requested{false};
+    std::atomic<bool> worker_time_up{false};
+    std::atomic<bool>* external_stop_requested = nullptr;
 
     std::shared_ptr<TranspositionTable> transposition_table;
 
     // MultiThreadManager
     MultiThreadManager<Evaluation, SearchParams> manager;
 
-    uint64_t nodes_searched;
+    std::atomic<uint64_t> nodes_searched{0};
 
     inline uint64_t GetPositionKey() const
     {
@@ -71,6 +73,8 @@ class ChessBot
     Evaluation SearchCore(SearchParams& params);
 
     int DepthExtension(const Move& move);
+
+    ChessBot(std::shared_ptr<ChessBoard> board, bool start_manager);
 
 public:
     ChessBot(std::shared_ptr<ChessBoard> board);

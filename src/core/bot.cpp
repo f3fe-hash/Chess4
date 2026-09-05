@@ -1,7 +1,13 @@
 #include "core/bot.hpp"
 
 
-ChessBot::ChessBot(std::shared_ptr<ChessBoard> board) : board(board)
+ChessBot::ChessBot(std::shared_ptr<ChessBoard> board)
+    : ChessBot(board, true)
+{}
+
+
+ChessBot::ChessBot(std::shared_ptr<ChessBoard> board, bool start_manager)
+    : board(board), manager(start_manager)
 {
     transposition_table = std::make_shared<TranspositionTable>();
     move_orderer = std::make_shared<MoveOrder>(transposition_table, board);
@@ -224,6 +230,7 @@ Evaluation ChessBot::SearchCore(SearchParams& params)
 #define LMR_EXT -3 // Extreme - disabled for now
 
 
+    // LMR
     bool endgame = evaluator.IsEndgame();
     if ((extension == 0) && !is_root_search && depth >= 4)
     {
@@ -287,9 +294,10 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         return result;
     }
 
-    nodes_searched = 0;
+    nodes_searched.store(0, std::memory_order_relaxed);
     time_up = false;
     stop_requested.store(false);
+    worker_time_up.store(false);
     search_start = std::chrono::steady_clock::now();
 
     std::vector<Move> moves = board->GetLegalMoves();
@@ -360,30 +368,18 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                 break;
             }
 
-            Move move = moves[move_idx];
-
-            // IMPORTANT:
-            //
-            // The root is ply 0.
-            // SearchCore makes the move and calls MainSearch
-            // at ply 1.
-            //
             SearchParams params = {
                 alpha:          alpha,
                 beta:           beta,
                 depth:          depth,
                 ply:            0,
-                move:           move,
+                move:           moves[move_idx],
                 move_idx:       move_idx,
                 is_root_search: true,
                 mate_in:        -2
             };
 
-            Evaluation eval = SearchCore(params);
-            
-            // Tracking fastest mate.
-            if (params.mate_in < mate_in_ply)
-                mate_in_ply = params.mate_in;
+            const Evaluation eval = SearchCore(params);
 
             if (time_up)
             {
@@ -391,13 +387,16 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                 break;
             }
 
+            if (params.mate_in < mate_in_ply)
+                mate_in_ply = params.mate_in;
+
             if (maximizing)
             {
                 if (eval > depth_eval)
                 {
                     depth_eval = eval;
 
-                    depth_move.move = move;
+                    depth_move.move = moves[move_idx];
                     depth_move.eval = eval;
                 }
 
@@ -409,20 +408,13 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                 {
                     depth_eval = eval;
 
-                    depth_move.move = move;
+                    depth_move.move = moves[move_idx];
                     depth_move.eval = eval;
                 }
 
                 beta = std::min(beta, eval);
             }
 
-            // Normally this cannot happen at the root because
-            // alpha starts at -INF and beta starts at +INF,
-            // but keeping the cutoff is harmless. However,
-            // it is commented out.
-            //
-            //if (alpha >= beta)
-            //    break;
         }
 
         // Only accept a completely searched iteration.
@@ -431,7 +423,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
             best_move = depth_move;
             best_depth = depth;
 
-            best_move.eval = std::max(best_move.eval, depth_eval);
+            best_move.eval = depth_eval;
         }
         else
         {
@@ -439,7 +431,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         }
     }
 
-    best_move.nodes_searched = nodes_searched;
+    best_move.nodes_searched =
+        nodes_searched.load(std::memory_order_relaxed);
     best_move.depth = best_depth;
     best_move.mate_in_ply = mate_in_ply;
 
@@ -459,15 +452,18 @@ Evaluation ChessBot::MainSearch(
     int& mate_in_ply
 )
 {
-    ++nodes_searched;
+    const uint64_t current_node =
+        nodes_searched.fetch_add(1, std::memory_order_relaxed) + 1;
 
     // --------------------------------------------------------
     // Time control.
     // --------------------------------------------------------
 
-    if ((nodes_searched & 4095) == 0)
+    if ((current_node & 4095) == 0)
     {
-        if (stop_requested.load())
+        if (stop_requested.load() ||
+            (external_stop_requested != nullptr &&
+             external_stop_requested->load()))
         {
             time_up = true;
             return 0;

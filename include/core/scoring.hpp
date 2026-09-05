@@ -29,7 +29,7 @@ const inline Evaluation BISHOP_VALUE_EG  = 915;
 const inline Evaluation ROOK_VALUE_EG    = 1380;
 const inline Evaluation QUEEN_VALUE_EG   = 2682;
 
-inline int endgame_phase;
+inline thread_local int endgame_phase = 0;
 
 inline void SetEndgamePhase(int phase)
 { endgame_phase = phase; }

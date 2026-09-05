@@ -492,7 +492,7 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
 }
 
 
-size_t qsearch_nodes;
+thread_local size_t qsearch_nodes = 0;
 
 Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
     Evaluation alpha,
