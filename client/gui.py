@@ -33,7 +33,12 @@ class ChessGUI:
         self.root = root
 
         self.root.title("UCI Chess Client")
-        self.root.resizable(False, False)
+        self.root.geometry("900x700")
+        self.root.minsize(700, 620)
+        self.root.resizable(True, True)
+
+        self.board_size = BOARD_SIZE
+        self.square_size = SQUARE_SIZE
 
         # ----------------------------------------------------
         # Game state
@@ -69,55 +74,77 @@ class ChessGUI:
 
         self.root.configure(bg="#20252b")
 
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_columnconfigure(1, weight=0)
+
+        self.left_frame = tk.Frame(root, bg="#20252b")
+        self.left_frame.grid(row=0, column=0, sticky="nsew", padx=(15, 5), pady=10)
+        self.left_frame.grid_rowconfigure(1, weight=1)
+        self.left_frame.grid_columnconfigure(0, weight=1)
+
+        self.right_frame = tk.Frame(root, bg="#20252b", width=230)
+        self.right_frame.grid(row=0, column=1, sticky="ns", padx=(5, 10), pady=10)
+        self.right_frame.grid_propagate(False)
+
         # ----------------------------------------------------
         # Match header
         # ----------------------------------------------------
 
-        self.header = tk.Frame(root, bg="#20252b")
-        self.header.pack(fill="x", padx=10, pady=(10, 5))
+        self.header = tk.Frame(self.left_frame, bg="#20252b")
+        self.header.grid(row=0, column=0, sticky="ew", pady=(0, 5))
 
         self.black_clock_var = tk.StringVar()
         self.white_clock_var = tk.StringVar()
 
+        self.clock_frame = tk.Frame(self.header, bg="#20252b")
+        self.clock_frame.pack()
+
+        tk.Label(
+            self.clock_frame, text="BLACK", font=("DejaVu Sans", 9, "bold"),
+            fg="#aab3bd", bg="#20252b"
+        ).pack(side="left", padx=(0, 6))
+
         self.black_clock_label = tk.Label(
-            self.header, textvariable=self.black_clock_var,
+            self.clock_frame, textvariable=self.black_clock_var,
             font=("DejaVu Sans", 20, "bold"), fg="#f4f1ea",
             bg="#20252b", width=7, anchor="w"
         )
         self.black_clock_label.pack(side="left")
 
         tk.Label(
-            self.header, text="BLACK", font=("DejaVu Sans", 9, "bold"),
+            self.clock_frame, text="WHITE", font=("DejaVu Sans", 9, "bold"),
             fg="#aab3bd", bg="#20252b"
-        ).pack(side="left", padx=(0, 12))
+        ).pack(side="left", padx=(16, 6))
 
         self.white_clock_label = tk.Label(
-            self.header, textvariable=self.white_clock_var,
+            self.clock_frame, textvariable=self.white_clock_var,
             font=("DejaVu Sans", 20, "bold"), fg="#f4f1ea",
-            bg="#20252b", width=7, anchor="e"
+            bg="#20252b", width=7, anchor="w"
         )
-        self.white_clock_label.pack(side="right")
-
-        tk.Label(
-            self.header, text="WHITE", font=("DejaVu Sans", 9, "bold"),
-            fg="#aab3bd", bg="#20252b"
-        ).pack(side="right", padx=(12, 0))
+        self.white_clock_label.pack(side="left")
 
         # ----------------------------------------------------
         # Board
         # ----------------------------------------------------
 
+        self.board_frame = tk.Frame(self.left_frame, bg="#20252b")
+        self.board_frame.grid(row=1, column=0, sticky="nsew")
+
         self.canvas = tk.Canvas(
-            root,
+            self.board_frame,
             width=BOARD_SIZE,
             height=BOARD_SIZE,
             highlightthickness=0
         )
 
         self.canvas.pack(
-            padx=10,
-            pady=(10, 5)
+            pady=(10, 5),
+            expand=True,
+            anchor="w"
         )
+
+        self.board_frame.bind("<Configure>", self.on_layout_resize)
 
         self.canvas.bind(
             "<ButtonPress-1>",
@@ -143,26 +170,24 @@ class ChessGUI:
         )
 
         self.status_label = tk.Label(
-            root,
+            self.right_frame,
             textvariable=self.status_var,
             anchor="w", fg="#d6dbe0", bg="#20252b"
         )
 
         self.status_label.pack(
             fill="x",
-            padx=10,
-            pady=(0, 10)
+            pady=(20, 20)
         )
 
         # ----------------------------------------------------
         # Controls
         # ----------------------------------------------------
 
-        self.control_frame = tk.Frame(root, bg="#20252b")
+        self.control_frame = tk.Frame(self.right_frame, bg="#20252b")
 
         self.control_frame.pack(
             fill="x",
-            padx=10,
             pady=(0, 10)
         )
 
@@ -175,7 +200,7 @@ class ChessGUI:
         )
 
         self.new_game_button.pack(
-            side="left"
+            fill="x"
         )
 
         self.time_control_var = tk.StringVar(value=self.time_control)
@@ -187,21 +212,21 @@ class ChessGUI:
             bg="#3a424b", fg="#f4f1ea", activebackground="#56616d",
             activeforeground="#ffffff", relief="flat", highlightthickness=0
         )
-        self.time_control_menu.pack(side="left", padx=6)
+        self.time_control_menu.pack(fill="x", pady=6)
 
         self.reconnect_button = tk.Button(
             self.control_frame, text="Reconnect", command=self.reconnect,
             bg="#3a424b", fg="#f4f1ea", activebackground="#56616d",
             relief="flat", padx=10
         )
-        self.reconnect_button.pack(side="left")
+        self.reconnect_button.pack(fill="x")
 
         self.resign_button = tk.Button(
             self.control_frame, text="Resign", command=self.resign,
             bg="#8f4141", fg="#ffffff", activebackground="#b95858",
             relief="flat", padx=10
         )
-        self.resign_button.pack(side="right")
+        self.resign_button.pack(fill="x", pady=(20, 0))
 
         # ----------------------------------------------------
         # UCI client
@@ -371,6 +396,19 @@ class ChessGUI:
     # Drawing
     # ========================================================
 
+    def on_layout_resize(self, event):
+        available_height = event.height - 15
+        available_size = min(event.width, available_height)
+        board_size = max(1, available_size)
+
+        if board_size == self.board_size:
+            return
+
+        self.board_size = board_size
+        self.square_size = board_size / 8
+        self.canvas.configure(width=board_size, height=board_size)
+        self.draw_board()
+
     def draw_board(self):
         self.canvas.delete("all")
 
@@ -385,11 +423,11 @@ class ChessGUI:
 
         for row in range(8):
             for col in range(8):
-                x1 = col * SQUARE_SIZE
-                y1 = row * SQUARE_SIZE
+                x1 = col * self.square_size
+                y1 = row * self.square_size
 
-                x2 = x1 + SQUARE_SIZE
-                y2 = y1 + SQUARE_SIZE
+                x2 = x1 + self.square_size
+                y2 = y1 + self.square_size
 
                 if (row + col) % 2 == 0:
                     square_color = LIGHT_SQUARE
@@ -419,16 +457,16 @@ class ChessGUI:
                 if piece is not None:
                     if USE_UCICODE_PIECES:
                         self.canvas.create_text(
-                            x1 + SQUARE_SIZE // 2,
-                            y1 + SQUARE_SIZE // 2,
+                            x1 + self.square_size / 2,
+                            y1 + self.square_size / 2,
                             text=UNICODE_PIECES[piece], # type: ignore
                             font=PIECE_FONT, # type: ignore
                             fill="black"
                         )
                     else:
                         self.canvas.create_image(
-                            x1 + SQUARE_SIZE // 2,
-                            y1 + SQUARE_SIZE // 2,
+                            x1 + self.square_size / 2,
+                            y1 + self.square_size / 2,
                             image=self.piece_images[piece]
                         )
 
@@ -439,8 +477,8 @@ class ChessGUI:
             file = chr(ord("a") + col)
 
             self.canvas.create_text(
-                col * SQUARE_SIZE + 5,
-                BOARD_SIZE - 5,
+                col * self.square_size + 5,
+                self.board_size - 5,
                 text=file,
                 anchor="sw",
                 font=COORDINATE_FONT,
@@ -456,7 +494,7 @@ class ChessGUI:
 
             self.canvas.create_text(
                 5,
-                row * SQUARE_SIZE + 5,
+                row * self.square_size + 5,
                 text=rank,
                 anchor="nw",
                 font=COORDINATE_FONT,
@@ -473,13 +511,13 @@ class ChessGUI:
 
     def mouse_to_square(self, x, y):
         if not (
-            0 <= x < BOARD_SIZE
-            and 0 <= y < BOARD_SIZE
+            0 <= x < self.board_size
+            and 0 <= y < self.board_size
         ):
             return None
 
-        col = x // SQUARE_SIZE
-        row = y // SQUARE_SIZE
+        col = int(x // self.square_size)
+        row = int(y // self.square_size)
 
         return self.board.coords_to_square(
             row,

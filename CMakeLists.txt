@@ -6,9 +6,9 @@ cmake_minimum_required(VERSION 3.12)
 
 project(Chess VERSION 1.0.0 LANGUAGES CXX)
 
-# Set C++ standard to C++23, and make it required
+# Set C++ standard to C++26, and make it required
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # All warnings,
@@ -17,7 +17,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # treat warnings as errors,
 # high optimization
 
-add_compile_options(-Wall -Wextra -Werror -O3)
+add_compile_options(-Wall -Wextra -Werror -Ofast)
 
 # Source files from src/*.cpp
 
