@@ -1,5 +1,6 @@
 import tkinter as tk
 import threading
+import tkinter.font as tkfont
 from tkinter import messagebox
 from pathlib import Path
 from time import monotonic
@@ -52,6 +53,12 @@ class ChessGUI:
         self.dragging = False
         self.drag_piece = None
         self.drag_from = None
+        self.drag_item = None
+        self.square_items = {}
+        self.square_colors = {}
+        self.piece_items = {}
+        self.coordinate_items = []
+        self.coordinates_size = None
 
         self.engine_thinking = False
         self.game_over = False
@@ -147,13 +154,14 @@ class ChessGUI:
             self.board_frame,
             width=BOARD_SIZE,
             height=BOARD_SIZE,
+            bg=LIGHT_SQUARE,
             highlightthickness=0
         )
 
         self.canvas.pack(
             pady=(10, 5),
             expand=True,
-            anchor="w"
+            anchor="center"
         )
 
         self.board_frame.bind("<Configure>", self.on_layout_resize)
@@ -180,11 +188,13 @@ class ChessGUI:
         self.status_var = tk.StringVar(
             value="Connecting..."
         )
+        self.status_message = "Connecting..."
 
         self.status_label = tk.Label(
             self.right_frame,
             textvariable=self.status_var,
-            anchor="w", fg="#d6dbe0", bg="#20252b"
+            anchor="w", fg="#d6dbe0", bg="#20252b",
+            width=1, padx=0, justify="left"
         )
 
         self.status_label.pack(
@@ -208,7 +218,8 @@ class ChessGUI:
             text="New game",
             command=self.new_game,
             bg="#d8a84e", activebackground="#edc36e",
-            relief="flat", padx=10
+            relief="flat", padx=10, pady=8,
+            font=("DejaVu Sans", 12, "bold")
         )
 
         self.new_game_button.pack(
@@ -222,23 +233,28 @@ class ChessGUI:
         )
         self.time_control_menu.config(
             bg="#3a424b", fg="#f4f1ea", activebackground="#56616d",
-            activeforeground="#ffffff", relief="flat", highlightthickness=0
+            activeforeground="#ffffff", relief="flat", highlightthickness=0,
+            font=("DejaVu Sans", 12)
         )
         self.time_control_menu.pack(fill="x", pady=6)
 
         self.reconnect_button = tk.Button(
             self.control_frame, text="Reconnect", command=self.reconnect,
             bg="#3a424b", fg="#f4f1ea", activebackground="#56616d",
-            relief="flat", padx=10
+            relief="flat", padx=10, pady=8,
+            font=("DejaVu Sans", 12, "bold")
         )
         self.reconnect_button.pack(fill="x")
 
         self.resign_button = tk.Button(
             self.control_frame, text="Resign", command=self.resign,
             bg="#8f4141", fg="#ffffff", activebackground="#b95858",
-            relief="flat", padx=10
+            relief="flat", padx=10, pady=8,
+            font=("DejaVu Sans", 12, "bold")
         )
         self.resign_button.pack(fill="x", pady=(20, 0))
+
+        self.update_control_sizes()
 
         # ----------------------------------------------------
         # UCI client
@@ -348,10 +364,16 @@ class ChessGUI:
         if self.closing:
             return
 
+        def apply_status():
+            if self.closing:
+                return
+
+            self.status_var.set(text)
+            self.status_message = text
+
         self.root.after(
             0,
-            lambda: self.status_var.set(text)
-            if not self.closing else None
+            apply_status
         )
 
     # ========================================================
@@ -431,7 +453,76 @@ class ChessGUI:
         self.square_size = board_size / 8
         self.canvas.configure(width=board_size, height=board_size)
         self.update_piece_images()
+        self.update_control_sizes()
         self.draw_board()
+
+    def update_control_sizes(self):
+        button_scale = max(0.8, min(1.8, self.board_size / BOARD_SIZE))
+        button_font_size = max(10, round(12 * button_scale))
+        menu_font_size = max(10, round(12 * button_scale))
+        horizontal_padding = max(8, round(10 * button_scale))
+        vertical_padding = max(5, round(8 * button_scale))
+
+        panel_width = max(
+            230,
+            min(420, round(self.root.winfo_width() * 0.22))
+        )
+        self.right_frame.configure(width=panel_width)
+
+        available_width = max(1, panel_width)
+
+        button_font_measure = tkfont.Font(
+            root=self.root,
+            family="DejaVu Sans",
+            size=button_font_size
+        )
+
+        while (
+            button_font_size > 10
+            and max(
+                button_font_measure.measure(label)
+                for label in ("New game", "Reconnect", "Resign")
+            ) > available_width - (horizontal_padding * 2)
+        ):
+            button_font_size -= 1
+            button_font_measure.configure(size=button_font_size)
+
+        button_font = ("DejaVu Sans", button_font_size)
+
+        for button in (
+            self.new_game_button,
+            self.reconnect_button,
+            self.resign_button
+        ):
+            button.configure(
+                font=button_font,
+                padx=horizontal_padding,
+                pady=vertical_padding,
+                height=1
+            )
+
+        self.time_control_menu.configure(
+            font=("DejaVu Sans", menu_font_size)
+        )
+
+        # ----------------------------------------------------
+        # Status message
+        # ----------------------------------------------------
+
+        # Keep status text small regardless of window size.
+        status_font_size = 12
+
+        # Leave a little room so text never touches the edge.
+        status_width = max(50, self.right_frame.winfo_width() - 20)
+
+        self.status_label.configure(
+            font=("DejaVu Sans", status_font_size),
+            wraplength=status_width,
+            justify="left",
+            anchor="w",
+        )
+
+        self.status_var.set(self.status_message)
 
     def update_piece_images(self):
         if USE_UCICODE_PIECES:
@@ -449,15 +540,11 @@ class ChessGUI:
         }
 
     def draw_board(self):
-        self.canvas.delete("all")
-
         selected_coords = None
 
         if self.drag_from is not None:
             selected_coords = (
-                self.board.square_to_coords(
-                    self.drag_from
-                )
+                self.board.square_to_coords(self.drag_from)
             )
 
         for row in range(8):
@@ -482,67 +569,124 @@ class ChessGUI:
                     ):
                         square_color = SELECT_SQUARE
 
-                self.canvas.create_rectangle(
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    fill=square_color,
-                    outline=""
-                )
+                square = (row, col)
+                square_item = self.square_items.get(square)
+
+                if square_item is None:
+                    self.square_items[square] = self.canvas.create_rectangle(
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        fill=square_color,
+                        outline=""
+                    )
+                else:
+                    self.canvas.coords(square_item, x1, y1, x2, y2)
+                    if self.square_colors.get(square) != square_color:
+                        self.canvas.itemconfig(square_item, fill=square_color)
+
+                self.square_colors[square] = square_color
 
                 piece = self.board.board[row][col]
 
-                if piece is not None:
+                piece_item = self.piece_items.get(square)
+
+                if piece is None or (
+                    self.dragging
+                    and self.drag_from is not None
+                    and self.board.square_to_coords(self.drag_from) == (row, col)
+                ):
+                    if piece_item is not None:
+                        self.canvas.delete(piece_item)
+                        del self.piece_items[square]
+                    continue
+
+                center_x = x1 + self.square_size / 2
+                center_y = y1 + self.square_size / 2
+
+                if piece_item is None:
                     if USE_UCICODE_PIECES:
-                        self.canvas.create_text(
-                            x1 + self.square_size / 2,
-                            y1 + self.square_size / 2,
+                        piece_item = self.canvas.create_text(
+                            center_x,
+                            center_y,
                             text=UNICODE_PIECES[piece], # type: ignore
                             font=PIECE_FONT, # type: ignore
                             fill="black"
                         )
                     else:
-                        self.canvas.create_image(
-                            x1 + self.square_size / 2,
-                            y1 + self.square_size / 2,
+                        piece_item = self.canvas.create_image(
+                            center_x,
+                            center_y,
+                            image=self.piece_images[piece]
+                        )
+                    self.piece_items[square] = piece_item
+                else:
+                    self.canvas.coords(piece_item, center_x, center_y)
+                    if USE_UCICODE_PIECES:
+                        self.canvas.itemconfig(
+                            piece_item,
+                            text=UNICODE_PIECES[piece], # type: ignore
+                            font=PIECE_FONT # type: ignore
+                        )
+                    else:
+                        self.canvas.itemconfig(
+                            piece_item,
                             image=self.piece_images[piece]
                         )
 
         self.draw_coordinates()
 
     def draw_coordinates(self):
+        if self.coordinates_size == self.board_size:
+            return
+
+        coordinates = []
+
         for col in range(8):
             file = chr(ord("a") + col)
 
-            self.canvas.create_text(
+            coordinates.append((
                 col * self.square_size + 5,
                 self.board_size - 5,
-                text=file,
-                anchor="sw",
-                font=COORDINATE_FONT,
-                fill=(
-                    DARK_SQUARE
-                    if col % 2 == 0
-                    else LIGHT_SQUARE
-                )
-            )
+                file,
+                "sw",
+                DARK_SQUARE if col % 2 == 0 else LIGHT_SQUARE
+            ))
 
         for row in range(8):
             rank = str(8 - row)
 
-            self.canvas.create_text(
+            coordinates.append((
                 5,
                 row * self.square_size + 5,
-                text=rank,
-                anchor="nw",
-                font=COORDINATE_FONT,
-                fill=(
-                    DARK_SQUARE
-                    if row % 2 == 0
-                    else LIGHT_SQUARE
+                rank,
+                "nw",
+                DARK_SQUARE if row % 2 == 0 else LIGHT_SQUARE
+            ))
+
+        for index, (x, y, text, anchor, fill) in enumerate(coordinates):
+            if index >= len(self.coordinate_items):
+                self.coordinate_items.append(
+                    self.canvas.create_text(
+                        x,
+                        y,
+                        text=text,
+                        anchor=anchor,
+                        font=COORDINATE_FONT,
+                        fill=fill
+                    )
                 )
-            )
+            else:
+                self.canvas.coords(self.coordinate_items[index], x, y)
+                self.canvas.itemconfig(
+                    self.coordinate_items[index],
+                    text=text,
+                    anchor=anchor,
+                    fill=fill
+                )
+
+        self.coordinates_size = self.board_size
 
     # ========================================================
     # Mouse -> Square
@@ -605,6 +749,21 @@ class ChessGUI:
 
         self.draw_board()
 
+        if USE_UCICODE_PIECES:
+            self.drag_item = self.canvas.create_text(
+                event.x,
+                event.y,
+                text=UNICODE_PIECES[self.drag_piece], # type: ignore
+                font=PIECE_FONT, # type: ignore
+                fill="black"
+            )
+        else:
+            self.drag_item = self.canvas.create_image(
+                event.x,
+                event.y,
+                image=self.piece_images[self.drag_piece]
+            )
+
     # ========================================================
     # Mouse Drag
     # ========================================================
@@ -613,22 +772,8 @@ class ChessGUI:
         if not self.dragging:
             return
 
-        self.draw_board()
-
-        if USE_UCICODE_PIECES:
-            self.canvas.create_text(
-                event.x,
-                event.y,
-                text=UNICODE_PIECES[self.drag_piece], # type: ignore
-                font=PIECE_FONT, # type: ignore
-                fill="black"
-            )
-        else:
-            self.canvas.create_image(
-                event.x,
-                event.y,
-                image=self.piece_images[self.drag_piece]
-            )
+        if self.drag_item is not None:
+            self.canvas.coords(self.drag_item, event.x, event.y)
 
     # ========================================================
     # Mouse Up
@@ -647,6 +792,10 @@ class ChessGUI:
 
         self.dragging = False
         self.drag_from = None
+
+        if self.drag_item is not None:
+            self.canvas.delete(self.drag_item)
+            self.drag_item = None
 
         # ----------------------------------------------------
         # Invalid destination
@@ -758,6 +907,7 @@ class ChessGUI:
 
         self.drag_piece = None
 
+        # Draw the player's move once.
         self.draw_board()
 
         # ----------------------------------------------------

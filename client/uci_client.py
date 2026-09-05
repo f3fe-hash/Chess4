@@ -40,6 +40,8 @@ class UCIClient:
                 (self.host, self.port)
             )
 
+            sock.settimeout(None)
+
             reader = sock.makefile(
                 "r",
                 encoding="utf-8",
