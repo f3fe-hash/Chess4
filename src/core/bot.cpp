@@ -195,16 +195,16 @@ int ChessBot::DepthExtension(const Move& move)
 // SearchCore.
 // ------------------------------------------------------------
 
-Evaluation ChessBot::SearchCore(
-    Evaluation alpha,
-    Evaluation beta,
-    int depth,
-    int ply,
-    Move move,
-    int move_idx,
-    bool is_root_search,
-    int& mate_in)
+Evaluation ChessBot::SearchCore(SearchParams& params)
 {
+    const Evaluation alpha      = params.alpha;
+    const Evaluation beta       = params.beta;
+    const int depth             = params.depth;
+    const int ply               = params.ply;
+    Move move                   = params.move;
+    const int move_idx          = params.move_idx;
+    const bool is_root_search   = params.is_root_search;
+
     // --------------------------------------------------------
     // Make the move.
     // --------------------------------------------------------
@@ -263,7 +263,7 @@ Evaluation ChessBot::SearchCore(
             beta,
             search_depth,
             ply + 1,
-            mate_in
+            params.mate_in
         );
 
     board->UndoMove(move);
@@ -368,22 +368,22 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
             // SearchCore makes the move and calls MainSearch
             // at ply 1.
             //
-            int _mate_in = 0;
-            Evaluation eval =
-                SearchCore(
-                    alpha,
-                    beta,
-                    depth,
-                    0,
-                    move,
-                    move_idx,
-                    true,
-                    _mate_in
-                );
+            SearchParams params = {
+                alpha:          alpha,
+                beta:           beta,
+                depth:          depth,
+                ply:            0,
+                move:           move,
+                move_idx:       move_idx,
+                is_root_search: true,
+                mate_in:        -2
+            };
+
+            Evaluation eval = SearchCore(params);
             
             // Tracking fastest mate.
-            if (_mate_in < mate_in_ply)
-                mate_in_ply = _mate_in;
+            if (params.mate_in < mate_in_ply)
+                mate_in_ply = params.mate_in;
 
             if (time_up)
             {
@@ -612,17 +612,18 @@ Evaluation ChessBot::MainSearch(
         {
             Move move = moves[move_idx];
 
-            Evaluation eval =
-                SearchCore(
-                    alpha,
-                    beta,
-                    depth,
-                    ply,
-                    move,
-                    move_idx,
-                    false,
-                    mate_in_ply
-                );
+            SearchParams params = {
+                alpha:          alpha,
+                beta:           beta,
+                depth:          depth,
+                ply:            ply,
+                move:           move,
+                move_idx:       move_idx,
+                is_root_search: false,
+                mate_in:        mate_in_ply
+            };
+
+            Evaluation eval = SearchCore(params);
 
             if (time_up)
                 return 0;
@@ -669,17 +670,18 @@ Evaluation ChessBot::MainSearch(
         {
             Move move = moves[move_idx];
 
-            Evaluation eval =
-                SearchCore(
-                    alpha,
-                    beta,
-                    depth,
-                    ply,
-                    move,
-                    move_idx,
-                    false,
-                    mate_in_ply
-                );
+            SearchParams params = {
+                alpha:          alpha,
+                beta:           beta,
+                depth:          depth,
+                ply:            ply,
+                move:           move,
+                move_idx:       move_idx,
+                is_root_search: false,
+                mate_in:        mate_in_ply
+            };
+
+            Evaluation eval = SearchCore(params);
 
             if (time_up)
                 return 0;

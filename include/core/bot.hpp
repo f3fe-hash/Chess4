@@ -15,6 +15,7 @@
 #include "core/eval.hpp"
 #include "core/transposition_table.hpp"
 #include "core/scoring.hpp"
+#include "core/multithread.hpp"
 
 
 struct MoveResult
@@ -32,6 +33,18 @@ using DurationMs = std::chrono::milliseconds;
 
 class ChessBot
 {
+    struct SearchParams
+    {
+        Evaluation alpha;
+        Evaluation beta;
+        int depth;
+        int ply;
+        Move move;
+        int move_idx;
+        bool is_root_search;
+        int mate_in;
+    };
+
     ChessBoardEvaluator evaluator;
 
     std::shared_ptr<ChessBoard> board;
@@ -44,6 +57,9 @@ class ChessBot
 
     std::shared_ptr<TranspositionTable> transposition_table;
 
+    // MultiThreadManager
+    MultiThreadManager<Evaluation, SearchParams> manager;
+
     uint64_t nodes_searched;
 
     inline uint64_t GetPositionKey() const
@@ -52,15 +68,7 @@ class ChessBot
     }
 
     Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply, int& mate_in);
-    Evaluation SearchCore(
-        Evaluation alpha,
-        Evaluation beta,
-        int depth,
-        int ply,
-        Move move,
-        int move_idx,
-        bool is_root_search,
-        int& mate_in);
+    Evaluation SearchCore(SearchParams& params);
 
     int DepthExtension(const Move& move);
 
