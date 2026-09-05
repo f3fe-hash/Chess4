@@ -59,6 +59,8 @@ class ChessGUI:
         self.piece_items = {}
         self.coordinate_items = []
         self.coordinates_size = None
+        self.last_move = None
+        self.last_move_item = None
 
         self.engine_thinking = False
         self.game_over = False
@@ -401,6 +403,7 @@ class ChessGUI:
             self.client.stop()
 
         self.board.reset()
+        self.last_move = None
 
         self.dragging = False
         self.drag_piece = None
@@ -644,7 +647,59 @@ class ChessGUI:
                             image=self.piece_images[piece]
                         )
 
+        self.draw_last_move()
         self.draw_coordinates()
+
+    def draw_last_move(self):
+        if self.last_move is None:
+            if self.last_move_item is not None:
+                self.canvas.delete(self.last_move_item)
+                self.last_move_item = None
+            return
+
+        from_row, from_col = self.board.square_to_coords(self.last_move[0])
+        to_row, to_col = self.board.square_to_coords(self.last_move[1])
+
+        from_x = from_col * self.square_size + self.square_size / 2
+        from_y = from_row * self.square_size + self.square_size / 2
+        to_x = to_col * self.square_size + self.square_size / 2
+        to_y = to_row * self.square_size + self.square_size / 2
+
+        arrow_width = max(3, self.square_size * 0.12)
+        arrow_shape = (
+            max(8, self.square_size * 0.28),
+            max(10, self.square_size * 0.38),
+            max(4, self.square_size * 0.14)
+        )
+
+        if self.last_move_item is None:
+            self.last_move_item = self.canvas.create_line(
+                from_x,
+                from_y,
+                to_x,
+                to_y,
+                fill="#2878d4",
+                width=arrow_width,
+                stipple="gray50",
+                arrow=tk.LAST,
+                arrowshape=arrow_shape
+            )
+            self.canvas.tag_raise(self.last_move_item)
+        else:
+            self.canvas.coords(
+                self.last_move_item,
+                from_x,
+                from_y,
+                to_x,
+                to_y
+            )
+            self.canvas.itemconfig(
+                self.last_move_item,
+                width=arrow_width,
+                arrowshape=arrow_shape
+            )
+
+        self.canvas.tag_raise(self.last_move_item)
 
     def draw_coordinates(self):
         if self.coordinates_size == self.board_size:
@@ -656,22 +711,38 @@ class ChessGUI:
             file = chr(ord("a") + col)
 
             coordinates.append((
+                (col + 1) * self.square_size - 5,
+                5,
+                file,
+                "ne",
+                DARK_SQUARE if col % 2 == 0 else LIGHT_SQUARE
+            ))
+
+            coordinates.append((
                 col * self.square_size + 5,
                 self.board_size - 5,
                 file,
                 "sw",
-                DARK_SQUARE if col % 2 == 0 else LIGHT_SQUARE
+                DARK_SQUARE if col % 2 == 1 else LIGHT_SQUARE
             ))
 
         for row in range(8):
             rank = str(8 - row)
 
             coordinates.append((
-                5,
+                3,
                 row * self.square_size + 5,
                 rank,
                 "nw",
                 DARK_SQUARE if row % 2 == 0 else LIGHT_SQUARE
+            ))
+
+            coordinates.append((
+                self.board_size - 5,
+                (row + 1) * self.square_size - 5,
+                rank,
+                "se",
+                DARK_SQUARE if row % 2 == 1 else LIGHT_SQUARE
             ))
 
         for index, (x, y, text, anchor, fill) in enumerate(coordinates):
@@ -911,6 +982,7 @@ class ChessGUI:
 
             return
 
+        self.last_move = (from_square, to_square)
         self.white_time += self.increment
         self.clock_started = True
 
@@ -1132,6 +1204,7 @@ class ChessGUI:
 
             return
 
+        self.last_move = (bestmove[0:2], bestmove[2:4])
         self.black_time += self.increment
         self.clock_started = True
 
