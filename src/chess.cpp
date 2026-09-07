@@ -1,7 +1,5 @@
 #include "chess.hpp"
 
-#include <sstream>
-
 namespace
 {
 
@@ -20,11 +18,6 @@ static uint8_t rook_magic_shifts[64];
 static Bitboard bishop_attacks[64][8192];
 static Bitboard rook_attacks[64][16384];
 static bool attack_lookup_initialized = false;
-
-inline Bitboard SquareMask(const Square square)
-{
-    return Bitboard(1ULL) << square;
-}
 
 inline bool IsInRange7(const uint8_t x)
 {
@@ -62,21 +55,6 @@ inline bool PieceIsOpponent(const Piece piece, const TurnColor color)
     return (color == TURN_WHITE) ?
         bool(piece & PIECE_COLOR_BLACK) :
         bool(piece & PIECE_COLOR_WHITE);
-}
-
-inline Square PopLeastSignificantBit(Bitboard& bits)
-{
-    Square sq = Square(__builtin_ctzll(bits));
-    bits &= bits - 1;
-    return sq;
-}
-
-inline Square PopBitboard(Bitboard bits)
-{
-    if (!bits)
-        return Square(64);
-
-    return PopLeastSignificantBit(bits);
 }
 
 inline void AddMove(
@@ -494,7 +472,7 @@ void ChessBoard::UpdateAttackBitboardsOnly()
         Bitboard pieces = occupancy_bitboards[piece];
         while (pieces)
         {
-            const Square square = PopLeastSignificantBit(pieces);
+            const Square square = PopLSB(pieces);
             Bitboard attacks = 0ULL;
 
             switch (get_piece_type(piece))
@@ -1017,7 +995,7 @@ void ChessBoard::MakeMove(Move& move)
     turn ^= 1;
 
     UpdateAttackBitboardsOnly();
-    zobrist_hash = GenerateZobristHash();
+    //zobrist_hash = GenerateZobristHash();
 
     history.push_back(zobrist_hash);
 }
@@ -1231,7 +1209,7 @@ void ChessBoard::UndoMove(Move move)
     turn ^= 1;
 
     UpdateAttackBitboardsOnly();
-    zobrist_hash = GenerateZobristHash();
+    //zobrist_hash = GenerateZobristHash();
 
     (void) history.pop_back();
 }
@@ -1253,7 +1231,7 @@ void ChessBoard::GetLegalPawnAttacks(std::vector<Move>& moves)
 
     while (pawns)
     {
-        square = PopLeastSignificantBit(pawns);
+        square = PopLSB(pawns);
 
         Piece piece = pieces[square];
         if ((piece & 0x07) != PIECE_TYPE_PAWN)
@@ -1264,7 +1242,7 @@ void ChessBoard::GetLegalPawnAttacks(std::vector<Move>& moves)
         Bitboard targets = pawn_attack_lookup[pawnIndex][square] & opponentOccupancy;
         while (targets)
         {
-            Square to = PopLeastSignificantBit(targets);
+            Square to = PopLSB(targets);
             AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
@@ -1281,12 +1259,12 @@ void ChessBoard::GetLegalKnightAttacks(std::vector<Move>& moves)
 
     while (knights)
     {
-        Square square = PopLeastSignificantBit(knights);
+        Square square = PopLSB(knights);
         Piece piece = pieces[square];
         Bitboard targets = knight_attack_lookup[square] & opponentOccupancy;
         while (targets)
         {
-            Square to = PopLeastSignificantBit(targets);
+            Square to = PopLSB(targets);
             AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
@@ -1305,12 +1283,12 @@ void ChessBoard::GetLegalBishopAttacks(std::vector<Move>& moves)
 
     while (bishops)
     {
-        Square square = PopLeastSignificantBit(bishops);
+        Square square = PopLSB(bishops);
         Piece piece = pieces[square];
         Bitboard targets = SlidingAttacks(square, occupancy, true) & opponentOccupancy;
         while (targets)
         {
-            Square to = PopLeastSignificantBit(targets);
+            Square to = PopLSB(targets);
             AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
@@ -1329,13 +1307,13 @@ void ChessBoard::GetLegalQueenAttacks(std::vector<Move>& moves)
 
     while (queens)
     {
-        Square square = PopLeastSignificantBit(queens);
+        Square square = PopLSB(queens);
         Piece piece = pieces[square];
         Bitboard targets = (SlidingAttacks(square, occupancy, true) |
             SlidingAttacks(square, occupancy, false)) & opponentOccupancy;
         while (targets)
         {
-            Square to = PopLeastSignificantBit(targets);
+            Square to = PopLSB(targets);
             AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
@@ -1352,12 +1330,12 @@ void ChessBoard::GetLegalKingAttacks(std::vector<Move>& moves)
 
     while (kings)
     {
-        Square square = PopLeastSignificantBit(kings);
+        Square square = PopLSB(kings);
         Piece piece = pieces[square];
         Bitboard targets = king_attack_lookup[square] & opponentOccupancy;
         while (targets)
         {
-            Square to = PopLeastSignificantBit(targets);
+            Square to = PopLSB(targets);
             AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
@@ -1382,7 +1360,7 @@ bool ChessBoard::IsSquareAttacked(Square square, TurnColor byColor)
 
     while (pawns)
     {
-        Square pawnSquare = PopLeastSignificantBit(pawns);
+        Square pawnSquare = PopLSB(pawns);
 
         int pawnIndex = (byColor == TURN_WHITE) ? 0 : 1;
 
@@ -1403,7 +1381,7 @@ bool ChessBoard::IsSquareAttacked(Square square, TurnColor byColor)
 
     while (knights)
     {
-        Square knightSquare = PopLeastSignificantBit(knights);
+        Square knightSquare = PopLSB(knights);
 
         if (knight_attack_lookup[knightSquare] &
             SquareMask(square))
@@ -1422,7 +1400,7 @@ bool ChessBoard::IsSquareAttacked(Square square, TurnColor byColor)
 
     while (kings)
     {
-        Square kingSquare = PopLeastSignificantBit(kings);
+        Square kingSquare = PopLSB(kings);
 
         if (king_attack_lookup[kingSquare] &
             SquareMask(square))
@@ -1534,7 +1512,7 @@ void ChessBoard::GetLegalPawnMoves(std::vector<Move>& moves)
 
     while (pawns)
     {
-        Square square = PopLeastSignificantBit(pawns);
+        Square square = PopLSB(pawns);
         Piece piece = pieces[square];
 
         int x = get_piece_x(square);
@@ -1566,7 +1544,7 @@ void ChessBoard::GetLegalPawnMoves(std::vector<Move>& moves)
         Bitboard captureTargets = pawn_attack_lookup[(turn == TURN_WHITE) ? 0 : 1][square] & ~friendlyOccupancy;
         while (captureTargets)
         {
-            Square to = PopLeastSignificantBit(captureTargets);
+            Square to = PopLSB(captureTargets);
             if (occupancy & SquareMask(to))
                 AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
@@ -1599,12 +1577,12 @@ void ChessBoard::GetLegalKnightMoves(std::vector<Move>& moves)
 
     while (knights)
     {
-        Square square = PopLeastSignificantBit(knights);
+        Square square = PopLSB(knights);
         Piece piece = pieces[square];
         Bitboard targets = knight_attack_lookup[square] & ~friendlyOccupancy;
         while (targets)
         {
-            Square to = PopLeastSignificantBit(targets);
+            Square to = PopLSB(targets);
             AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
@@ -1623,12 +1601,12 @@ void ChessBoard::GetLegalBishopMoves(std::vector<Move>& moves)
 
     while (bishops)
     {
-        Square square = PopLeastSignificantBit(bishops);
+        Square square = PopLSB(bishops);
         Piece piece = pieces[square];
         Bitboard targets = SlidingAttacks(square, occupancy, true) & ~friendlyOccupancy;
         while (targets)
         {
-            Square to = PopLeastSignificantBit(targets);
+            Square to = PopLSB(targets);
             AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
@@ -1647,12 +1625,12 @@ void ChessBoard::GetLegalRookMoves(std::vector<Move>& moves)
 
     while (rooks)
     {
-        Square square = PopLeastSignificantBit(rooks);
+        Square square = PopLSB(rooks);
         Piece piece = pieces[square];
         Bitboard targets = SlidingAttacks(square, occupancy, false) & ~friendlyOccupancy;
         while (targets)
         {
-            Square to = PopLeastSignificantBit(targets);
+            Square to = PopLSB(targets);
             AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
@@ -1671,13 +1649,13 @@ void ChessBoard::GetLegalQueenMoves(std::vector<Move>& moves)
 
     while (queens)
     {
-        Square square = PopLeastSignificantBit(queens);
+        Square square = PopLSB(queens);
         Piece piece = pieces[square];
         Bitboard targets = (SlidingAttacks(square, occupancy, true) |
             SlidingAttacks(square, occupancy, false)) & ~friendlyOccupancy;
         while (targets)
         {
-            Square to = PopLeastSignificantBit(targets);
+            Square to = PopLSB(targets);
             AddMove(moves, square, to, piece, pieces[to], CASTLE_NONE);
         }
     }
@@ -1700,7 +1678,7 @@ void ChessBoard::GetLegalKingMoves(std::vector<Move>& moves)
 
     while (kings)
     {
-        Square square = PopLeastSignificantBit(kings);
+        Square square = PopLSB(kings);
         Piece piece = pieces[square];
 
         Bitboard targets =
@@ -1709,7 +1687,7 @@ void ChessBoard::GetLegalKingMoves(std::vector<Move>& moves)
 
         while (targets)
         {
-            Square to = PopLeastSignificantBit(targets);
+            Square to = PopLSB(targets);
 
             AddMove(
                 moves,
@@ -2104,8 +2082,6 @@ bool ChessBoard::IsLegalMove(Move move)
 
 bool ChessBoard::IsCheck()
 {
-    UpdateAttackBitboards();
-
     Bitboard opponentAttacks = (turn == TURN_WHITE) ? attack_bitboard_black : attack_bitboard_white;
 
     Bitboard kings = occupancy_bitboards[
@@ -2165,7 +2141,7 @@ uint8_t ChessBoard::CountPawns() const
     uint8_t count = 0;
     while (pawns)
     {
-        PopLeastSignificantBit(pawns);
+        PopLSB(pawns);
         ++count;
     }
     return count;
@@ -2183,7 +2159,7 @@ uint8_t ChessBoard::CountKnights() const
     uint8_t count = 0;
     while (knights)
     {
-        PopLeastSignificantBit(knights);
+        PopLSB(knights);
         ++count;
     }
     return count;
@@ -2201,7 +2177,7 @@ uint8_t ChessBoard::CountBishops() const
     uint8_t count = 0;
     while (bishops)
     {
-        PopLeastSignificantBit(bishops);
+        PopLSB(bishops);
         ++count;
     }
     return count;
@@ -2219,7 +2195,7 @@ uint8_t ChessBoard::CountRooks() const
     uint8_t count = 0;
     while (rooks)
     {
-        PopLeastSignificantBit(rooks);
+        PopLSB(rooks);
         ++count;
     }
     return count;
@@ -2237,7 +2213,7 @@ uint8_t ChessBoard::CountQueens() const
     uint8_t count = 0;
     while (queens)
     {
-        PopLeastSignificantBit(queens);
+        PopLSB(queens);
         ++count;
     }
     return count;
@@ -2255,7 +2231,7 @@ uint8_t ChessBoard::CountKings() const
     uint8_t count = 0;
     while (kings)
     {
-        PopLeastSignificantBit(kings);
+        PopLSB(kings);
         ++count;
     }
     return count;

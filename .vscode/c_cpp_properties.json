@@ -12,7 +12,7 @@
             "intelliSenseMode": "linux-clang-x64",
             "configurationProvider": "nordic-semiconductor.nrf-connect",
             "compilerArgs": [
-                "-std=c++23"
+                "-std=c++26"
             ]
         }
     ],

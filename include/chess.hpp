@@ -5,6 +5,9 @@
 #include <vector>
 #include <unordered_map>
 #include <string>
+#include <sstream>
+
+#include "bitboards.hpp"
 
 #define A1 0
 #define B1 1
@@ -70,9 +73,6 @@
 #define F8 61
 #define G8 62
 #define H8 63
-
-// Note: pieces only actually take up 6 bits.
-using Square = uint8_t;
 
 #define PIECE_TYPE_NONE     0x00
 #define PIECE_TYPE_PAWN     0x01
@@ -177,9 +177,6 @@ struct ZobristTable
 
 // Global instance of keys initialized once at application startup
 inline const ZobristTable zobrist_keys;
-
-// 64 square bitboard.
-using Bitboard = uint64_t;
 
 #define TURN_WHITE  1
 #define TURN_BLACK  0

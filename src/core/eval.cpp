@@ -496,6 +496,15 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
 {
     ++qsearch_nodes;
 
+    Move tt_move{};
+    const ZobristHash key = board->GetZobristHash();
+
+    if (transposition_table->Contains(key))
+    {
+        const auto entry = transposition_table->GetEntry(key);
+        tt_move = entry.best_move;
+    }
+
     if (board->IsCheck())
     {
         auto moves = board->GetLegalMoves();
@@ -504,10 +513,17 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
         if (moves.empty())
             return maximizing ? -CHECKMATE_SCORE : CHECKMATE_SCORE;
 
-        move_orderer->OrderMoves(moves, 0);
-
-        for (Move move : moves)
+        for (int move_idx = 0;
+             move_idx < static_cast<int>(moves.size());
+             ++move_idx)
         {
+            Move move = move_orderer->PickBestMove(
+                moves,
+                move_idx,
+                tt_move,
+                0
+            );
+
             // `MakeMove` edits `move` with castling rights, promption flags, etc. for `UndoMove`
             board->MakeMove(move);
 
@@ -557,10 +573,17 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
 
     auto captures = board->GetLegalCaptures();
 
-    move_orderer->OrderMoves(captures, 0);
-
-    for (Move move : captures)
+    for (int move_idx = 0;
+         move_idx < static_cast<int>(captures.size());
+         ++move_idx)
     {
+        Move move = move_orderer->PickBestMove(
+            captures,
+            move_idx,
+            tt_move,
+            0
+        );
+
         // `MakeMove` edits `move` with castling rights, promption flags, etc. for `UndoMove`
         board->MakeMove(move);
 

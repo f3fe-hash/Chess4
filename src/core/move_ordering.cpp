@@ -96,9 +96,9 @@ void MoveOrder::OrderMoves(std::vector<Move>& moves, int depth) const
 
 Move MoveOrder::PickBestMove(
     std::vector<Move>& moves,
-    int start,
+    const int start,
     const Move& tt_move,
-    int depth) const
+    const int depth) const
 {
     int best = start;
     Evaluation best_score = MoveOrderScore(moves[start], tt_move, depth);

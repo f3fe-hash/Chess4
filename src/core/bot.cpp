@@ -253,7 +253,6 @@ Evaluation ChessBot::SearchCore(SearchParams& params)
 #define LMR_HIG -3 // High
 #define LMR_EXT -3 // Extreme - disabled for now
 
-
     // LMR
     bool endgame = evaluator.IsEndgame();
     if ((extension == 0) && !is_root_search && depth >= 4)

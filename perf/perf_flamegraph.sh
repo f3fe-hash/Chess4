@@ -4,7 +4,7 @@ set -e
 
 FLAMEGRAPH="$HOME/FlameGraph"
 OUTPUT="flamegraph.svg"
-CHESS="./build/Chess"
+CHESS="../build/Chess"
 
 echo "========================================"
 echo " Chess Flame Graph Profiler"
