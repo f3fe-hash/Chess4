@@ -33,4 +33,10 @@ public:
     ~MoveOrder() {}
 
     void OrderMoves(std::vector<Move>& moves, int depth) const;
+
+    Move PickBestMove(
+        std::vector<Move>& moves,
+        int start,
+        const Move& tt_move,
+        int depth = 0) const;
 };

@@ -6,6 +6,9 @@
 #include "core/scoring.hpp"
 
 
+extern const int BUCKETS;
+
+
 enum class TranspositionTableBound
 {
     // Default
@@ -75,11 +78,13 @@ class TranspositionTable
     // Zobrist hash -> Transposition entry data
     Bucket transposition_table[65535];
 
-    void _Store(const ZobristHash& key, const TranspositionTableEntry& entry);
-    TranspositionTableEntry _Get(const ZobristHash& key) const;
-    bool _Contains(const ZobristHash& key) const;
+    constexpr Bucket& GetBucket(const ZobristHash& key);
+    constexpr Bucket GetBucket(const ZobristHash key) const;
 
-    void setBound(const ZobristHash& key, const Evaluation exact_eval, const int depth, const TranspositionTableBound bound);
+    void Store(const ZobristHash& key, const TranspositionTableEntry& entry);
+    TranspositionTableEntry Get(const ZobristHash& key) const;
+
+    void SetBound(const ZobristHash& key, const Evaluation exact_eval, const int depth, const TranspositionTableBound bound);
 
 public:
     TranspositionTable() = default;
@@ -88,14 +93,14 @@ public:
 
     size_t GetNumEntries() const;
 
-    bool keyIsStored(const ZobristHash& key) const;
+    bool Contains(const ZobristHash& key) const;
 
-    TranspositionTableEntry getKey(const ZobristHash& key) const;
+    TranspositionTableEntry GetEntry(const ZobristHash& key) const;
     
-    void setBestMove(const ZobristHash& key, const Move& move, const int depth);
+    void SetBestMove(const ZobristHash& key, const Move& move, const int depth);
 
-    void setExact       (const ZobristHash& key, const Evaluation exact_eval, const int depth);
-    void setLowerBound  (const ZobristHash& key, const Evaluation lower_eval, const int depth);
-    void setUpperBound  (const ZobristHash& key, const Evaluation upper_eval, const int depth);
+    void SetExact       (const ZobristHash& key, const Evaluation exact_eval, const int depth);
+    void SetLowerBound  (const ZobristHash& key, const Evaluation lower_eval, const int depth);
+    void SetUpperBound  (const ZobristHash& key, const Evaluation upper_eval, const int depth);
 };
 

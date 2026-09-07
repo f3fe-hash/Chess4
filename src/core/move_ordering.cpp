@@ -53,40 +53,68 @@ Evaluation MoveOrder::MoveOrderScore(
 void MoveOrder::OrderMoves(std::vector<Move>& moves, int depth) const
 {
     Move tt_move{};
-    ZobristHash key = board->GetZobristHash();
 
-    if (transposition_table->keyIsStored(key))
+    const ZobristHash key = board->GetZobristHash();
+
+    if (transposition_table->Contains(key))
     {
-        auto entry = transposition_table->getKey(key);
+        const auto entry = transposition_table->GetEntry(key);
+
         if (entry.depth >= depth)
             tt_move = entry.best_move;
     }
 
-    // Compute score once per move
-    struct Scored {
-        Move m;
+    struct ScoredMove
+    {
         Evaluation score;
+        Move move;
     };
 
-    std::vector<Scored> tmp;
-    tmp.reserve(moves.size());
+    std::vector<ScoredMove> scored;
+    scored.reserve(moves.size());
 
-    for (const Move& m : moves)
+    for (const Move& move : moves)
     {
-        // Score should incorporate:
-        Evaluation score = MoveOrderScore(m, tt_move, depth);
-        tmp.push_back({m, score});
+        scored.push_back({
+            MoveOrderScore(move, tt_move, depth),
+            move
+        });
     }
 
-    std::sort(tmp.begin(), tmp.end(),
-              [](const Scored& a, const Scored& b) {
-                  return a.score > b.score; // descending
-              });
+    std::sort(
+        scored.begin(),
+        scored.end(),
+        [](const ScoredMove& a, const ScoredMove& b)
+        {
+            return a.score > b.score;
+        });
 
-    // Write back
-    for (size_t i = 0; i < tmp.size(); ++i)
-        moves[i] = tmp[i].m;
+    for (size_t i = 0; i < moves.size(); ++i)
+        moves[i] = scored[i].move;
 }
 
 
+Move MoveOrder::PickBestMove(
+    std::vector<Move>& moves,
+    int start,
+    const Move& tt_move,
+    int depth) const
+{
+    int best = start;
+    Evaluation best_score = MoveOrderScore(moves[start], tt_move, depth);
+
+    for (int i = start + 1; i < static_cast<int>(moves.size()); ++i)
+    {
+        Evaluation score = MoveOrderScore(moves[i], tt_move, depth);
+
+        if (score > best_score)
+        {
+            best_score = score;
+            best = i;
+        }
+    }
+
+    std::swap(moves[start], moves[best]);
+    return moves[start];
+}
 

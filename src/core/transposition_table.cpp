@@ -1,18 +1,31 @@
 #include "core/transposition_table.hpp"
 
 
-// If this is updated, please also update the size of TranspositionTable::transposition_table
-constexpr int BUCKETS = 65535;
+const int BUCKETS = 65535;
 
 
-void TranspositionTable::_Store(
+constexpr TranspositionTable::Bucket& TranspositionTable::GetBucket(const ZobristHash& key)
+{
+    const uint64_t bucket_idx = key % BUCKETS;
+    return transposition_table[bucket_idx];
+}
+
+
+constexpr TranspositionTable::Bucket TranspositionTable::GetBucket(const ZobristHash key) const
+{
+    const uint64_t bucket_idx = key % BUCKETS;
+    return transposition_table[bucket_idx];
+}
+
+
+void TranspositionTable::Store(
     const ZobristHash& key,
     const TranspositionTableEntry& entry)
 {
-    const uint32_t bucket_idx = key % BUCKETS;
-    Bucket& bucket = transposition_table[bucket_idx];
+    Bucket& bucket = GetBucket(key);
 
-    const Entry stored_entry{
+    const Entry stored_entry = Entry
+    {
         entry,
         key,
         true
@@ -56,20 +69,17 @@ void TranspositionTable::_Store(
     {
         if (bucket.entries[entry_idx].entry.depth <
             bucket.entries[replacement_idx].entry.depth)
-        {
             replacement_idx = entry_idx;
-        }
     }
 
     bucket.entries[replacement_idx] = stored_entry;
 }
 
 
-TranspositionTableEntry TranspositionTable::_Get(
+TranspositionTableEntry TranspositionTable::Get(
     const ZobristHash& key) const
 {
-    const uint32_t bucket_idx = key % BUCKETS;
-    const Bucket& bucket = transposition_table[bucket_idx];
+    const Bucket& bucket = GetBucket(key);
 
     for (int entry_idx = 0; entry_idx < bucket.n_entries; entry_idx++)
     {
@@ -79,22 +89,6 @@ TranspositionTableEntry TranspositionTable::_Get(
     }
 
     return {};
-}
-
-
-bool TranspositionTable::_Contains(const ZobristHash& key) const
-{
-    const uint32_t bucket_idx = key % BUCKETS;
-    const Bucket& bucket = transposition_table[bucket_idx];
-
-    for (int entry_idx = 0; entry_idx < bucket.n_entries; entry_idx++)
-    {
-        const Entry& tt_entry = bucket.entries[entry_idx];
-        if (tt_entry.is_valid(key))
-            return true;
-    }
-
-    return false;
 }
 
 
@@ -115,28 +109,37 @@ size_t TranspositionTable::GetNumEntries() const
 }
 
 
-bool TranspositionTable::keyIsStored(const ZobristHash& key) const
+bool TranspositionTable::Contains(const ZobristHash& key) const
 {
-    return _Contains(key);
+    const Bucket& bucket = GetBucket(key);
+
+    for (uint8_t entry_idx = 0; entry_idx < bucket.n_entries; entry_idx++)
+    {
+        const Entry& tt_entry = bucket.entries[entry_idx];
+        if (tt_entry.is_valid(key))
+            return true;
+    }
+
+    return false;
 }
 
 
-TranspositionTableEntry TranspositionTable::getKey(const ZobristHash& key) const
+TranspositionTableEntry TranspositionTable::GetEntry(const ZobristHash& key) const
 {
-    return _Get(key);
+    return Get(key);
 }
 
 
-void TranspositionTable::setBestMove(
+void TranspositionTable::SetBestMove(
     const ZobristHash& key,
     const Move& move,
     const int depth)
 {
     TranspositionTableEntry entry{};
 
-    if (_Contains(key))
+    if (Contains(key))
     {
-        entry = _Get(key);
+        entry = Get(key);
 
         // Don't replace a deeper entry.
         if (entry.depth > depth)
@@ -149,11 +152,11 @@ void TranspositionTable::setBestMove(
     if (entry.depth < depth)
         entry.depth = static_cast<uint8_t>(depth);
 
-    _Store(key, entry);
+    Store(key, entry);
 }
 
 
-void TranspositionTable::setBound(
+void TranspositionTable::SetBound(
     const ZobristHash& key,
     const Evaluation eval,
     const int depth,
@@ -161,9 +164,9 @@ void TranspositionTable::setBound(
 {
     TranspositionTableEntry entry{};
 
-    if (_Contains(key))
+    if (Contains(key))
     {
-        entry = _Get(key);
+        entry = Get(key);
 
         // Don't replace a deeper entry with a shallower one.
         if (entry.depth > depth)
@@ -174,24 +177,24 @@ void TranspositionTable::setBound(
     entry.bound = bound;
     entry.depth = static_cast<uint8_t>(depth);
 
-    _Store(key, entry);
+    Store(key, entry);
 }
 
 
-void TranspositionTable::setExact(const ZobristHash& key, const Evaluation exact_eval, const int depth)
+void TranspositionTable::SetExact(const ZobristHash& key, const Evaluation exact_eval, const int depth)
 {
-    setBound(key, exact_eval, depth, TranspositionTableBound::EXACT);
+    SetBound(key, exact_eval, depth, TranspositionTableBound::EXACT);
 }
 
 
-void TranspositionTable::setLowerBound(const ZobristHash& key, const Evaluation lower_eval, const int depth)
+void TranspositionTable::SetLowerBound(const ZobristHash& key, const Evaluation lower_eval, const int depth)
 {
-    setBound(key, lower_eval, depth, TranspositionTableBound::LOWER);
+    SetBound(key, lower_eval, depth, TranspositionTableBound::LOWER);
 }
 
 
-void TranspositionTable::setUpperBound(const ZobristHash& key, const Evaluation upper_eval, const int depth)
+void TranspositionTable::SetUpperBound(const ZobristHash& key, const Evaluation upper_eval, const int depth)
 {
-    setBound(key, upper_eval, depth, TranspositionTableBound::UPPER);
+    SetBound(key, upper_eval, depth, TranspositionTableBound::UPPER);
 }
 

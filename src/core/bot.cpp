@@ -303,6 +303,17 @@ Evaluation ChessBot::SearchCore(SearchParams& params)
 }
 
 
+MoveResult ChessBot::EvaluateRootMove(SearchParams params)
+{
+    MoveResult result{};
+    result.move = params.move;
+    result.eval = SearchCore(params);
+    result.mate_in_ply = params.mate_in;
+    result.nodes_searched = nodes_searched.load(std::memory_order_relaxed);
+    return result;
+}
+
+
 // ------------------------------------------------------------
 // Root search.
 // ------------------------------------------------------------
@@ -363,11 +374,6 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
             break;
         }
 
-        move_orderer->OrderMoves(moves, 0);
-
-        Evaluation alpha = INT32_MIN;
-        Evaluation beta  = INT32_MAX;
-
         Evaluation depth_eval =
             maximizing ? INT32_MIN : INT32_MAX;
 
@@ -379,67 +385,79 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         // Root moves.
         // ----------------------------------------------------
 
+        Move tt_move{};
+        if (transposition_table->Contains(board->GetZobristHash()))
+        {
+            const auto entry = transposition_table->GetEntry(board->GetZobristHash());
+            if (entry.depth >= depth)
+                tt_move = entry.best_move;
+        }
+
+        std::vector<int> job_ids;
+        job_ids.reserve(moves.size());
+
         for (int move_idx = 0;
              move_idx < static_cast<int>(moves.size());
              ++move_idx)
         {
-            const DurationMs current_time_limit = GetTimeLimit();
-            if (current_time_limit.count() > 0 &&
-                std::chrono::steady_clock::now() - search_start
-                    >= current_time_limit)
-            {
-                depth_completed = false;
-                break;
-            }
+            const Move move = move_orderer->PickBestMove(
+                moves,
+                move_idx,
+                tt_move,
+                depth
+            );
 
             SearchParams params = {
-                alpha:          alpha,
-                beta:           beta,
+                alpha:          static_cast<Evaluation>(INT32_MIN),
+                beta:           static_cast<Evaluation>(INT32_MAX),
                 depth:          depth,
                 ply:            0,
-                move:           moves[move_idx],
+                move:           move,
                 move_idx:       move_idx,
                 is_root_search: true,
                 mate_in:        INT64_MAX
             };
 
-            const Evaluation eval = SearchCore(params);
-
-            if (time_up)
-            {
-                depth_completed = false;
-                break;
-            }
-
-            if (params.mate_in < mate_in_ply)
-                mate_in_ply = params.mate_in;
-
-            if (maximizing)
-            {
-                if (eval > depth_eval)
+            job_ids.push_back(manager.QueueJob(
+                [this](const SearchParams& job_params)
                 {
-                    depth_eval = eval;
-
-                    depth_move.move = moves[move_idx];
-                    depth_move.eval = eval;
-                }
-
-                alpha = std::max(alpha, eval);
-            }
-            else
-            {
-                if (eval < depth_eval)
-                {
-                    depth_eval = eval;
-
-                    depth_move.move = moves[move_idx];
-                    depth_move.eval = eval;
-                }
-
-                beta = std::min(beta, eval);
-            }
-
+                    auto worker_board = std::make_shared<ChessBoard>(*board);
+                    ChessBot worker(worker_board, false);
+                    worker.SetTimeLimit(GetTimeLimit());
+                    worker.search_start = search_start;
+                    worker.external_stop_requested = &stop_requested;
+                    return worker.EvaluateRootMove(job_params);
+                },
+                params
+            ));
         }
+
+        manager.WaitAllJobs();
+        const std::vector<MoveResult> results = manager.GetJobsResult(job_ids);
+
+        for (const MoveResult& result : results)
+        {
+            nodes_searched.fetch_add(
+                result.nodes_searched,
+                std::memory_order_relaxed
+            );
+
+            if (result.mate_in_ply < mate_in_ply)
+                mate_in_ply = result.mate_in_ply;
+
+            if ((maximizing && result.eval > depth_eval) ||
+                (!maximizing && result.eval < depth_eval))
+            {
+                depth_eval = result.eval;
+                depth_move = result;
+            }
+        }
+
+        const DurationMs depth_time_limit = GetTimeLimit();
+        if (stop_requested.load() ||
+            (depth_time_limit.count() > 0 &&
+             std::chrono::steady_clock::now() - search_start >= depth_time_limit))
+            depth_completed = false;
 
         // Only accept a completely searched iteration.
         if (depth_completed && !time_up)
@@ -576,9 +594,9 @@ Evaluation ChessBot::MainSearch(
     // Transposition-table lookup.
     // --------------------------------------------------------
 
-    if (transposition_table->keyIsStored(key))
+    if (transposition_table->Contains(key))
     {
-        const TranspositionTableEntry& entry = transposition_table->getKey(key);
+        const TranspositionTableEntry& entry = transposition_table->GetEntry(key);
 
         if (entry.depth >= depth)
         {
@@ -612,7 +630,13 @@ Evaluation ChessBot::MainSearch(
     // Move ordering.
     // --------------------------------------------------------
 
-    move_orderer->OrderMoves(moves, depth);
+    Move tt_move{};
+    if (transposition_table->Contains(key))
+    {
+        const auto entry = transposition_table->GetEntry(key);
+        if (entry.depth >= depth)
+            tt_move = entry.best_move;
+    }
 
     Evaluation best_eval;
 
@@ -628,7 +652,12 @@ Evaluation ChessBot::MainSearch(
              move_idx < static_cast<int>(moves.size());
              ++move_idx)
         {
-            Move move = moves[move_idx];
+            Move move = move_orderer->PickBestMove(
+                moves,
+                move_idx,
+                tt_move,
+                depth
+            );
 
             SearchParams params = {
                 alpha:          alpha,
@@ -649,7 +678,7 @@ Evaluation ChessBot::MainSearch(
             if (eval > best_eval)
             {
                 best_eval = eval;
-                transposition_table->setBestMove(key, move, depth);
+                transposition_table->SetBestMove(key, move, depth);
             }
             
             alpha = std::max(alpha, eval);
@@ -663,7 +692,7 @@ Evaluation ChessBot::MainSearch(
                 Evaluation stored_eval =
                     NormalizeMateScore(best_eval, ply);
 
-                transposition_table->setLowerBound(
+                transposition_table->SetLowerBound(
                     key,
                     stored_eval,
                     static_cast<uint8_t>(depth)
@@ -686,7 +715,12 @@ Evaluation ChessBot::MainSearch(
              move_idx < static_cast<int>(moves.size());
              ++move_idx)
         {
-            Move move = moves[move_idx];
+            Move move = move_orderer->PickBestMove(
+                moves,
+                move_idx,
+                tt_move,
+                depth
+            );
 
             SearchParams params = {
                 alpha:          alpha,
@@ -707,7 +741,7 @@ Evaluation ChessBot::MainSearch(
             if (eval < best_eval)
             {
                 best_eval = eval;
-                transposition_table->setBestMove(key, move, depth);
+                transposition_table->SetBestMove(key, move, depth);
             }
 
             beta = std::min(beta, eval);
@@ -721,7 +755,7 @@ Evaluation ChessBot::MainSearch(
                 Evaluation stored_eval =
                     NormalizeMateScore(best_eval, ply);
 
-                transposition_table->setUpperBound(
+                transposition_table->SetUpperBound(
                     key,
                     stored_eval,
                     static_cast<uint8_t>(depth)
@@ -739,7 +773,7 @@ Evaluation ChessBot::MainSearch(
     Evaluation stored_eval =
         NormalizeMateScore(best_eval, ply);
 
-    transposition_table->setExact(
+    transposition_table->SetExact(
         key,
         stored_eval,
         static_cast<uint8_t>(depth)

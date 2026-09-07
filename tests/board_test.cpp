@@ -218,14 +218,14 @@ TEST(TranspositionTable, ReplacesShallowestEntry)
     constexpr uint64_t bucket = 17;
 
     for (uint8_t depth = 1; depth <= 8; ++depth)
-        table->setExact(bucket + depth * 65535, depth, depth);
+        table->SetExact(bucket + depth * 65535, depth, depth);
 
     const uint64_t replacementKey = bucket + 9 * 65535;
-    table->setExact(replacementKey, 99, 0);
+    table->SetExact(replacementKey, 99, 0);
 
-    EXPECT_FALSE(table->keyIsStored(bucket + 65535));
-    EXPECT_TRUE(table->keyIsStored(replacementKey));
-    EXPECT_EQ(table->getKey(replacementKey).eval, 99);
+    EXPECT_FALSE(table->Contains(bucket + 65535));
+    EXPECT_TRUE(table->Contains(replacementKey));
+    EXPECT_EQ(table->GetEntry(replacementKey).eval, 99);
 }
 
 

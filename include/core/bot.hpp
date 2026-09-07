@@ -60,7 +60,7 @@ class ChessBot
     std::shared_ptr<TranspositionTable> transposition_table;
 
     // MultiThreadManager
-    MultiThreadManager<Evaluation, SearchParams> manager;
+    MultiThreadManager<MoveResult, SearchParams> manager;
 
     std::atomic<uint64_t> nodes_searched{0};
 
@@ -71,6 +71,7 @@ class ChessBot
 
     Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply, int64_t& mate_in);
     Evaluation SearchCore(SearchParams& params);
+    MoveResult EvaluateRootMove(SearchParams params);
 
     int DepthExtension(const Move& move);
 
