@@ -215,6 +215,28 @@ class ChessGUI:
             pady=(0, 10)
         )
 
+        self.host_var = tk.StringVar(value=server_host)
+        self.host_label = tk.Label(
+            self.control_frame,
+            text="Host",
+            anchor="w",
+            fg="#aab3bd",
+            bg="#20252b",
+            font=("DejaVu Sans", 10, "bold")
+        )
+        self.host_label.pack(fill="x", pady=(0, 3))
+
+        self.host_entry = tk.Entry(
+            self.control_frame,
+            textvariable=self.host_var,
+            bg="#f4f1ea",
+            fg="#20252b",
+            insertbackground="#20252b",
+            relief="flat",
+            font=("DejaVu Sans", 11),
+        )
+        self.host_entry.pack(fill="x", ipady=5, pady=(0, 6))
+
         self.new_game_button = tk.Button(
             self.control_frame,
             text="New game",
@@ -338,6 +360,15 @@ class ChessGUI:
         )
 
     def reconnect(self):
+        host = self.host_var.get().strip()
+        if not host:
+            messagebox.showerror(
+                "Connection Error",
+                "Enter a host before reconnecting."
+            )
+            return
+
+        self.client.host = host
         self.client.close()
         self.set_status("Reconnecting...")
         self.root.after(100, self.connect)
