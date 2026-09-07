@@ -1,6 +1,6 @@
 //#define CONSOLE_APP
-//#define UCI_SERVER
-#define MATCH_TEST
+#define UCI_SERVER
+//#define MATCH_TEST
 
 #include <iostream>
 

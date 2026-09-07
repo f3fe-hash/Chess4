@@ -230,11 +230,14 @@ inline Bitboard SlidingAttacks(const Square square, const Bitboard occupancy, co
     const Bitboard magic = bishop
         ? bishop_magics[square]
         : rook_magics[square];
+    
     const unsigned shift = bishop
         ? bishop_magic_shifts[square]
         : rook_magic_shifts[square];
+    
     const unsigned index = static_cast<unsigned>(
         ((occupancy & mask) * magic) >> shift);
+    
     return bishop ? bishop_attacks[square][index] : rook_attacks[square][index];
 }
 

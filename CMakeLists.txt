@@ -1,3 +1,6 @@
+# To run tests:
+# cmake --build . --target chess_tests_verbose
+
 # CMake minimum version
 
 cmake_minimum_required(VERSION 3.12)
@@ -136,6 +139,10 @@ target_link_libraries(chess_tests
     GTest::gtest_main
 )
 
-include(GoogleTest)
+add_test(NAME chess_tests COMMAND chess_tests)
 
-gtest_discover_tests(chess_tests)
+add_custom_target(chess_tests_verbose
+    COMMAND chess_tests
+    DEPENDS chess_tests
+    USES_TERMINAL
+)

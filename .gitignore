@@ -3,6 +3,6 @@ build
 .venv
 client/__pycache__
 
-flamegraph.svg
-out.*
-perf.*
+perf/flamegraph.svg
+perf/out.*
+perf/perf.*
