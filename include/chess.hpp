@@ -214,6 +214,7 @@ class ChessBoard
 
     void UpdateOccupancyBitboards();
     void UpdateAttackBitboards();
+    void UpdateAttackBitboardsOnly();
 
     void ComputeAttackLookupBitboards();
 
@@ -244,6 +245,9 @@ class ChessBoard
         int base = (color == PIECE_COLOR_WHITE) ? 0 : 6;
         return base + (type - 1);
     }
+
+    size_t GetNumMoves() const;
+    size_t GetNumCaptures() const;
     
 public:
     ChessBoard();
@@ -277,6 +281,15 @@ public:
     Square PopRooks() const;
     Square PopQueens() const;
     Square PopKings() const;
+
+    Bitboard GetPawns() const;
+    Bitboard GetKnights() const;
+    Bitboard GetBishops() const;
+    Bitboard GetRooks() const;
+    Bitboard GetQueens() const;
+    Bitboard GetKings() const;
+
+    bool HasPseudoLegalCapture() const;
 
     inline bool GetTurnColor() const
     { return turn; }

@@ -1,6 +1,6 @@
 //#define CONSOLE_APP
-#define UCI_SERVER
-//#define MATCH_TEST
+//#define UCI_SERVER
+#define MATCH_TEST
 
 #include <iostream>
 
@@ -43,10 +43,10 @@ int main()
     bot2 = std::make_shared<ChessBot>(board);
     
     Console console(board, bot1);
-    bot1->SetTimeLimit(DurationMs(100));
-    bot2->SetTimeLimit(DurationMs(100));
+    bot1->SetTimeLimit(DurationMs(1000));
+    bot2->SetTimeLimit(DurationMs(1000));
 
-    console.PrintBoard();
+    //console.PrintBoard();
     while (!(board->IsCheckMate() || board->IsStaleMate() || board->IsThreeFoldRepition()))
     {
         MoveResult result;
@@ -73,8 +73,8 @@ int main()
         std::cout << console.MoveToString(result.move) << "." << std::endl;
     }
 
-    console.PrintBoard();
-    console.PrintEndgame();
+    //console.PrintBoard();
+    //console.PrintEndgame();
 
     if (board->GetTurnColor() == TURN_WHITE)
     {

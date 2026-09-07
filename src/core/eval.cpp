@@ -153,57 +153,51 @@ Evaluation ChessBoardEvaluator::EvaluatePSTs()
 {
     Evaluation eval = 0;
 
-    for (Square square = 0; square < 64; ++square)
-    {
-        Piece piece = board->GetPieceAt(square);
-        if (piece == NULL_PIECE)
-            continue;
+    const bool white = board->GetTurnColor() == TURN_WHITE;
+    const int phase = GetEndgamePhase();
 
-        bool pieceIsFriendly = (board->GetTurnColor() == TURN_WHITE)
-            ? bool(piece & PIECE_COLOR_WHITE)
-            : bool(piece & PIECE_COLOR_BLACK);
-
-        if (!pieceIsFriendly)
-            continue;
-
-        Square pst_square = __fix_pst_square(square);
-        int phase = GetEndgamePhase();
-
-        switch (piece & 0x07)
+    auto evaluate_pieces =
+        [&](Bitboard pieces, const auto& pst)
         {
-            case PIECE_TYPE_PAWN:
-                eval += PAWN_PST[pst_square];
-                break;
-
-            case PIECE_TYPE_KNIGHT:
-                eval += KNIGHT_PST[pst_square];
-                break;
-
-            case PIECE_TYPE_BISHOP:
-                eval += BISHOP_PST[pst_square];
-                break;
-
-            case PIECE_TYPE_ROOK:
-                eval += ROOK_PST[pst_square];
-                break;
-
-            case PIECE_TYPE_QUEEN:
-                eval += QUEEN_PST[pst_square];
-                break;
-
-            case PIECE_TYPE_KING:
+            while (pieces)
             {
-                int king_score =
-                    ((256 - phase) * KING_PST[pst_square] +
-                    phase * KING_ENDGAME_PST[pst_square]) / 256;
-                
-                eval += king_score;
-                break;
-            }
+                const Square square =
+                    Square(__builtin_ctzll(pieces));
 
-            default:
-                break;
-        }
+                pieces &= pieces - 1;
+
+                const Square pst_square =
+                    white
+                        ? square
+                        : Square(square ^ 56);
+
+                eval += pst[pst_square];
+            }
+        };
+
+    evaluate_pieces(board->GetPawns(), PAWN_PST);
+    evaluate_pieces(board->GetKnights(), KNIGHT_PST);
+    evaluate_pieces(board->GetBishops(), BISHOP_PST);
+    evaluate_pieces(board->GetRooks(), ROOK_PST);
+    evaluate_pieces(board->GetQueens(), QUEEN_PST);
+
+    Bitboard kings = board->GetKings();
+
+    while (kings)
+    {
+        const Square square =
+            Square(__builtin_ctzll(kings));
+
+        kings &= kings - 1;
+
+        const Square pst_square =
+            white
+                ? square
+                : Square(square ^ 56);
+
+        eval +=
+            ((256 - phase) * KING_PST[pst_square] +
+             phase * KING_ENDGAME_PST[pst_square]) / 256;
     }
 
     return eval;
@@ -557,6 +551,9 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
             return stand_pat;
         beta = std::min(beta, stand_pat);
     }
+
+    if (board->HasPseudoLegalCapture())
+        return maximizing ? alpha : beta;
 
     auto captures = board->GetLegalCaptures();
 

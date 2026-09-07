@@ -13,11 +13,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # All warnings,
 # extra warnings,
-# pedantic warnings,
-# treat warnings as errors,
 # high optimization
 
-add_compile_options(-Wall -Wextra -Werror -Ofast)
+add_compile_options(-Wall -Wextra -Ofast)
 
 # Source files from src/*.cpp
 

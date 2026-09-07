@@ -13,6 +13,10 @@ static Bitboard rook_rays[64];
 static Bitboard queen_rays[64];
 static Bitboard bishop_masks[64];
 static Bitboard rook_masks[64];
+static Bitboard bishop_magics[64];
+static Bitboard rook_magics[64];
+static uint8_t bishop_magic_shifts[64];
+static uint8_t rook_magic_shifts[64];
 static Bitboard bishop_attacks[64][8192];
 static Bitboard rook_attacks[64][16384];
 static bool attack_lookup_initialized = false;
@@ -22,12 +26,20 @@ inline Bitboard SquareMask(const Square square)
     return Bitboard(1ULL) << square;
 }
 
-inline bool IsOnBoard(const int x, const int y)
+inline bool IsInRange7(const uint8_t x)
 {
-    return (x >= 0) && (x < 8) && (y >= 0) && (y < 8);
+    // (x >= 0) && (x < 8)
+    return !bool(x & (~7));
 }
 
-inline Square FlattenSquare(const int x, const int y)
+inline bool IsOnBoard(const uint8_t x, const uint8_t y)
+{
+    // GCC will optimize (simplify) the logic operations.
+    // return (x >= 0) && (x < 8) && (y >= 0) && (y < 8);
+    return IsInRange7(x) && IsInRange7(y);
+}
+
+inline Square FlattenSquare(const uint8_t x, const uint8_t y)
 {
     return Square(flatten_xy(x, y));
 }
@@ -36,14 +48,20 @@ inline bool PieceIsFriendly(const Piece piece, const TurnColor color)
 {
     if (piece == NULL_PIECE)
         return false;
-    return (color == TURN_WHITE) ? bool(piece & PIECE_COLOR_WHITE) : bool(piece & PIECE_COLOR_BLACK);
+    
+    return (color == TURN_WHITE) ?
+        bool(piece & PIECE_COLOR_WHITE) :
+        bool(piece & PIECE_COLOR_BLACK);
 }
 
 inline bool PieceIsOpponent(const Piece piece, const TurnColor color)
 {
     if (piece == NULL_PIECE)
         return false;
-    return !PieceIsFriendly(piece, color);
+    
+    return (color == TURN_WHITE) ?
+        bool(piece & PIECE_COLOR_BLACK) :
+        bool(piece & PIECE_COLOR_WHITE);
 }
 
 inline Square PopLeastSignificantBit(Bitboard& bits)
@@ -56,7 +74,7 @@ inline Square PopLeastSignificantBit(Bitboard& bits)
 inline Square PopBitboard(Bitboard bits)
 {
     if (!bits)
-        return Square(65);
+        return Square(64);
 
     return PopLeastSignificantBit(bits);
 }
@@ -72,6 +90,7 @@ inline void AddMove(
     const bool promotion =
         get_piece_type(moved) == PIECE_TYPE_PAWN &&
         get_piece_y(to) == (get_piece_color(moved) == PIECE_COLOR_WHITE ? 7 : 0);
+    
     const Piece promotionTypes[] = {
         PIECE_TYPE_QUEEN, PIECE_TYPE_ROOK,
         PIECE_TYPE_BISHOP, PIECE_TYPE_KNIGHT
@@ -89,6 +108,7 @@ inline void AddMove(
         move.prev_castling_rights = castlingRights;
         if (promotion)
             move.promotion = promotionTypes[index] | get_piece_color(moved);
+        
         moves.push_back(move);
     }
 }
@@ -113,6 +133,7 @@ Bitboard ComputeSlidingAttacks(const Square square, const Bitboard occupancy, co
             attacks |= mask;
             if (occupancy & mask)
                 break;
+            
             x += dx;
             y += dy;
         }
@@ -121,25 +142,99 @@ Bitboard ComputeSlidingAttacks(const Square square, const Bitboard occupancy, co
     return attacks;
 }
 
-inline unsigned CompressedIndex(Bitboard occupancy, Bitboard mask)
+inline Bitboard NextRandom(Bitboard& state)
 {
-    unsigned index = 0;
+    state ^= state >> 12;
+    state ^= state << 25;
+    state ^= state >> 27;
+    return state * 0x2545F4914F6CDD1DULL;
+}
+
+inline Bitboard SparseRandom(Bitboard& state)
+{
+    return NextRandom(state) & NextRandom(state) & NextRandom(state);
+}
+
+inline Bitboard OccupancyFromIndex(unsigned index, Bitboard mask)
+{
+    Bitboard occupancy = 0ULL;
     unsigned bit = 0;
     while (mask)
     {
         Bitboard least = mask & -mask;
-        if (occupancy & least)
-            index |= 1U << bit;
+        if (index & (1U << bit))
+            occupancy |= least;
         mask &= mask - 1;
         ++bit;
     }
-    return index;
+    return occupancy;
+}
+
+Bitboard FindMagic(
+    const Square square,
+    const Bitboard mask,
+    const int directions[][2],
+    const int directionCount,
+    const unsigned bits,
+    Bitboard& randomState)
+{
+    const unsigned tableSize = 1U << bits;
+    std::vector<Bitboard> occupancies(tableSize);
+    std::vector<Bitboard> attacks(tableSize);
+
+    for (unsigned index = 0; index < tableSize; ++index)
+    {
+        occupancies[index] = OccupancyFromIndex(index, mask);
+        attacks[index] = ComputeSlidingAttacks(
+            square, occupancies[index], directions, directionCount);
+    }
+
+    for (;;)
+    {
+        const Bitboard magic = SparseRandom(randomState);
+        if (std::popcount((mask * magic) & 0xFF00000000000000ULL) < 6)
+            continue;
+
+        std::vector<Bitboard> used(tableSize, 0ULL);
+        std::vector<bool> occupied(tableSize, false);
+        bool valid = true;
+
+        for (unsigned index = 0; index < tableSize; ++index)
+        {
+            const unsigned magicIndex = static_cast<unsigned>(
+                (occupancies[index] * magic) >> (64 - bits));
+
+            if (occupied[magicIndex])
+            {
+                if (used[magicIndex] != attacks[index])
+                {
+                    valid = false;
+                    break;
+                }
+            }
+            else
+            {
+                occupied[magicIndex] = true;
+                used[magicIndex] = attacks[index];
+            }
+        }
+
+        if (valid)
+            return magic;
+    }
 }
 
 inline Bitboard SlidingAttacks(const Square square, const Bitboard occupancy, const bool bishop)
 {
     const Bitboard mask = bishop ? bishop_masks[square] : rook_masks[square];
-    const unsigned index = CompressedIndex(occupancy & mask, mask);
+    const Bitboard magic = bishop
+        ? bishop_magics[square]
+        : rook_magics[square];
+    const unsigned shift = bishop
+        ? bishop_magic_shifts[square]
+        : rook_magic_shifts[square];
+    const unsigned index = static_cast<unsigned>(
+        ((occupancy & mask) * magic) >> shift);
     return bishop ? bishop_attacks[square][index] : rook_attacks[square][index];
 }
 
@@ -156,6 +251,7 @@ constexpr Bitboard BLACK_QUEENSIDE_EMPTY =
     (1ULL << B8) | (1ULL << C8) | (1ULL << D8);
 
 }
+
 
 ChessBoard::ChessBoard()
 {
@@ -176,8 +272,7 @@ ChessBoard::ChessBoard()
     attack_bitboard_black = 0ULL;
     turn = TURN_WHITE;
 
-    castling_rights = CastlingRights(CASTLE_WK | CASTLE_WQ |
-                  CASTLE_BK | CASTLE_BQ);
+    castling_rights = CastlingRights(CASTLE_WK | CASTLE_WQ | CASTLE_BK | CASTLE_BQ);
     en_passant = 64;
 }
 
@@ -186,9 +281,9 @@ ChessBoard::~ChessBoard()
 {}
 
 
-uint64_t ChessBoard::GenerateZobristHash() const
+ZobristHash ChessBoard::GenerateZobristHash() const
 {
-    uint64_t hash = 0;
+    ZobristHash hash = 0;
     for (int s = 0; s < 64; ++s)
     {
         if (pieces[s] != NULL_PIECE)
@@ -214,6 +309,7 @@ Piece ChessBoard::GetPieceAt(Square square) const
 {
     if (square < 64)
         return pieces[square];
+    
     return NULL_PIECE;
 }
 
@@ -376,6 +472,12 @@ void ChessBoard::UpdateAttackBitboards()
     ComputeAttackLookupBitboards();
     UpdateOccupancyBitboards();
 
+    UpdateAttackBitboardsOnly();
+}
+
+
+void ChessBoard::UpdateAttackBitboardsOnly()
+{
     Bitboard occupancy = occupancy_bitboard_white | occupancy_bitboard_black;
 
     attack_bitboard_white = 0ULL;
@@ -384,55 +486,62 @@ void ChessBoard::UpdateAttackBitboards()
     for (int i = 0; i < 32; ++i)
         attack_bitboards[i] = 0ULL;
 
-    for (Square square = 0; square < 64; ++square)
+    const auto addAttacks = [&](const Piece piece)
     {
-        Piece piece = pieces[square];
-        if (piece == NULL_PIECE)
-            continue;
+        Bitboard pieces = occupancy_bitboards[piece];
+        while (pieces)
+        {
+            const Square square = PopLeastSignificantBit(pieces);
+            Bitboard attacks = 0ULL;
 
-        Bitboard attacks = 0ULL;
-        Piece pieceType = Piece(piece & 0x07);
+            switch (get_piece_type(piece))
+            {
+                case PIECE_TYPE_PAWN:
+                    attacks = pawn_attack_lookup[
+                        (piece & PIECE_COLOR_WHITE) == 0][square];
+                    break;
 
-    switch (pieceType)
-    {
-        case PIECE_TYPE_PAWN:
+                case PIECE_TYPE_KNIGHT:
+                    attacks = knight_attack_lookup[square];
+                    break;
+
+                case PIECE_TYPE_BISHOP:
+                    attacks = SlidingAttacks(square, occupancy, true);
+                    break;
+
+                case PIECE_TYPE_ROOK:
+                    attacks = SlidingAttacks(square, occupancy, false);
+                    break;
+
+                case PIECE_TYPE_QUEEN:
+                    attacks = SlidingAttacks(square, occupancy, true) |
+                        SlidingAttacks(square, occupancy, false);
+                    break;
+
+                case PIECE_TYPE_KING:
+                    attacks = king_attack_lookup[square];
+                    break;
+
+                default:
+                    break;
+            }
+
+            attack_bitboards[piece] |= attacks;
             if (piece & PIECE_COLOR_WHITE)
-                attacks = pawn_attack_lookup[0][square];
+                attack_bitboard_white |= attacks;
             else
-                attacks = pawn_attack_lookup[1][square];
-            break;
-
-        case PIECE_TYPE_KNIGHT:
-            attacks = knight_attack_lookup[square];
-            break;
-
-        case PIECE_TYPE_BISHOP:
-            attacks = SlidingAttacks(square, occupancy, true);
-            break;
-
-        case PIECE_TYPE_ROOK:
-            attacks = SlidingAttacks(square, occupancy, false);
-            break;
-
-        case PIECE_TYPE_QUEEN:
-            attacks = SlidingAttacks(square, occupancy, true) |
-                SlidingAttacks(square, occupancy, false);
-                break;
-
-            case PIECE_TYPE_KING:
-                attacks = king_attack_lookup[square];
-                break;
-
-            default:
-                break;
+                attack_bitboard_black |= attacks;
         }
+    };
 
-        attack_bitboards[piece] |= attacks;
-
-        if (piece & PIECE_COLOR_WHITE)
-            attack_bitboard_white |= attacks;
-        else if (piece & PIECE_COLOR_BLACK)
-            attack_bitboard_black |= attacks;
+    for (int color : { PIECE_COLOR_WHITE, PIECE_COLOR_BLACK })
+    {
+        addAttacks(PIECE_TYPE_PAWN | color);
+        addAttacks(PIECE_TYPE_KNIGHT | color);
+        addAttacks(PIECE_TYPE_BISHOP | color);
+        addAttacks(PIECE_TYPE_ROOK | color);
+        addAttacks(PIECE_TYPE_QUEEN | color);
+        addAttacks(PIECE_TYPE_KING | color);
     }
 }
 
@@ -442,26 +551,29 @@ void ChessBoard::UpdateAttackBitboards()
 // actually move.
 void ChessBoard::ComputeAttackLookupBitboards()
 {
+    // Very expensive function
     if (attack_lookup_initialized)
         return;
 
-    const int knightOffsets[8][2] = {
+    constexpr int knightOffsets[8][2] = {
         {1, 2}, {2, 1}, {2, -1}, {1, -2},
         {-1, -2}, {-2, -1}, {-2, 1}, {-1, 2}
     };
 
-    const int kingOffsets[8][2] = {
+    constexpr int kingOffsets[8][2] = {
         {1, 0}, {1, 1}, {0, 1}, {-1, 1},
         {-1, 0}, {-1, -1}, {0, -1}, {1, -1}
     };
 
-    const int bishopDirs[4][2] = {
+    constexpr int bishopDirs[4][2] = {
         {1, 1}, {1, -1}, {-1, 1}, {-1, -1}
     };
 
-    const int rookDirs[4][2] = {
+    constexpr int rookDirs[4][2] = {
         {1, 0}, {-1, 0}, {0, 1}, {0, -1}
     };
+
+    Bitboard randomState = 1804289383ULL;
 
     for (Square square = 0; square < 64; ++square)
     {
@@ -543,36 +655,57 @@ void ChessBoard::ComputeAttackLookupBitboards()
         rook_rays[square] = rook;
         queen_rays[square] = bishop | rook;
 
-        bishop_masks[square] = bishop;
-        rook_masks[square] = rook;
+        const auto relevantMask = [&](const int directions[][2], const int directionCount) {
+            Bitboard mask = 0ULL;
+            for (int i = 0; i < directionCount; ++i)
+            {
+                const int dx = directions[i][0];
+                const int dy = directions[i][1];
+                int cx = x + dx;
+                int cy = y + dy;
+
+                while (IsOnBoard(cx, cy) && IsOnBoard(cx + dx, cy + dy))
+                {
+                    mask |= SquareMask(FlattenSquare(cx, cy));
+                    cx += dx;
+                    cy += dy;
+                }
+            }
+            return mask;
+        };
+
+        bishop_masks[square] = relevantMask(bishopDirs, 4);
+        rook_masks[square] = relevantMask(rookDirs, 4);
+
+        const unsigned bishopBits = std::popcount(bishop_masks[square]);
+        const unsigned rookBits = std::popcount(rook_masks[square]);
+        bishop_magic_shifts[square] = 64 - bishopBits;
+        rook_magic_shifts[square] = 64 - rookBits;
+        bishop_magics[square] = FindMagic(
+            square, bishop_masks[square], bishopDirs, 4,
+            bishopBits, randomState);
+        rook_magics[square] = FindMagic(
+            square, rook_masks[square], rookDirs, 4,
+            rookBits, randomState);
+
         const unsigned bishopSize = 1U << std::popcount(bishop_masks[square]);
         const unsigned rookSize = 1U << std::popcount(rook_masks[square]);
         for (unsigned index = 0; index < bishopSize; ++index)
         {
-            Bitboard subset = 0;
-            Bitboard mask = bishop_masks[square];
-            for (unsigned bit = 0; mask; ++bit)
-            {
-                Bitboard least = mask & -mask;
-                if (index & (1U << bit))
-                    subset |= least;
-                mask &= mask - 1;
-            }
-            bishop_attacks[square][index] = ComputeSlidingAttacks(
+            const Bitboard subset = OccupancyFromIndex(
+                index, bishop_masks[square]);
+            const unsigned magicIndex = static_cast<unsigned>(
+                (subset * bishop_magics[square]) >> bishop_magic_shifts[square]);
+            bishop_attacks[square][magicIndex] = ComputeSlidingAttacks(
                 square, subset, bishopDirs, 4);
         }
         for (unsigned index = 0; index < rookSize; ++index)
         {
-            Bitboard subset = 0;
-            Bitboard mask = rook_masks[square];
-            for (unsigned bit = 0; mask; ++bit)
-            {
-                Bitboard least = mask & -mask;
-                if (index & (1U << bit))
-                    subset |= least;
-                mask &= mask - 1;
-            }
-            rook_attacks[square][index] = ComputeSlidingAttacks(
+            const Bitboard subset = OccupancyFromIndex(
+                index, rook_masks[square]);
+            const unsigned magicIndex = static_cast<unsigned>(
+                (subset * rook_magics[square]) >> rook_magic_shifts[square]);
+            rook_attacks[square][magicIndex] = ComputeSlidingAttacks(
                 square, subset, rookDirs, 4);
         }
     }
@@ -762,15 +895,12 @@ void ChessBoard::MakeMove(Move& move)
 
     pieces[move.to] = movedPiece;
 
-    occupancy_bitboards[movedPiece] |=
-        SquareMask(move.to);
+    occupancy_bitboards[movedPiece] |= SquareMask(move.to);
 
     if (movingWhite)
-        occupancy_bitboard_white |=
-            SquareMask(move.to);
+        occupancy_bitboard_white |= SquareMask(move.to);
     else
-        occupancy_bitboard_black |=
-            SquareMask(move.to);
+        occupancy_bitboard_black |= SquareMask(move.to);
 
     // ------------------------------------------------------------
     // Castling: move the rook.
@@ -834,9 +964,6 @@ void ChessBoard::MakeMove(Move& move)
             (get_piece_y(move.from) + get_piece_y(move.to)) / 2);
     }
 
-    // Do this BEFORE zobrist hash update.
-    turn ^= 1;
-
     // ------------------------------------------------------------
     // Zobrist: Update zobrist hash value.
     // ------------------------------------------------------------
@@ -884,7 +1011,9 @@ void ChessBoard::MakeMove(Move& move)
     move.moved = movedPiece;
     move.captured = capturedPiece;
 
-    UpdateAttackBitboards();
+    turn ^= 1;
+
+    UpdateAttackBitboardsOnly();
     zobrist_hash = GenerateZobristHash();
 
     history.push_back(zobrist_hash);
@@ -899,7 +1028,6 @@ void ChessBoard::UndoMove(Move move)
 
     // If the move was a promotion, restore a pawn.
     Piece restoredPiece = movedPiece;
-
     if (move.flags & MOVE_PROMOTION)
     {
         restoredPiece =
@@ -958,11 +1086,9 @@ void ChessBoard::UndoMove(Move move)
         SquareMask(move.from);
 
     if (movingWhite)
-        occupancy_bitboard_white |=
-            SquareMask(move.from);
+        occupancy_bitboard_white |= SquareMask(move.from);
     else
-        occupancy_bitboard_black |=
-            SquareMask(move.from);
+        occupancy_bitboard_black |= SquareMask(move.from);
 
     // ------------------------------------------------------------
     // Undo castling rook movement.
@@ -1053,9 +1179,6 @@ void ChessBoard::UndoMove(Move move)
         }
     }
 
-    // Do this BEFORE Zobrist hash update
-    turn ^= 1;
-
     // ------------------------------------------------------------
     // Zobrist: Update zobrist hash value.
     // ------------------------------------------------------------
@@ -1075,7 +1198,6 @@ void ChessBoard::UndoMove(Move move)
 
     // Restore the original piece on the source square.
     Piece originalPiece = move.moved;
-
     if (move.flags & MOVE_PROMOTION)
     {
         originalPiece =
@@ -1103,7 +1225,9 @@ void ChessBoard::UndoMove(Move move)
     castling_rights = move.prev_castling_rights;
     en_passant = move.prev_en_passant;
 
-    UpdateAttackBitboards();
+    turn ^= 1;
+
+    UpdateAttackBitboardsOnly();
     zobrist_hash = GenerateZobristHash();
 
     (void) history.pop_back();
@@ -1709,99 +1833,189 @@ void ChessBoard::AddCastlingMoves(
 std::vector<Move> ChessBoard::GetLegalMoves()
 {
     std::vector<Move> moves;
+    moves.reserve(GetNumMoves());
+
     GetLegalPawnMoves(moves);
     GetLegalKnightMoves(moves);
     GetLegalBishopMoves(moves);
     GetLegalRookMoves(moves);
     GetLegalQueenMoves(moves);
     GetLegalKingMoves(moves);
-    
-    std::vector<Move> legal_moves;
-    legal_moves.reserve(moves.size());
 
-    for (Move move : moves)
+    size_t write = 0;
+
+    for (size_t read = 0; read < moves.size(); ++read)
     {
+        Move move = moves[read];
+
         MakeMove(move);
 
-        // After MakeMove, `turn` is the opponent. We need to check
-        // whether the side that just moved (mover) is now in check.
-        TurnColor moverColor = (turn == TURN_WHITE) ? TURN_BLACK : TURN_WHITE;
+        // After MakeMove, `turn` is the opponent.
+        TurnColor moverColor =
+            (turn == TURN_WHITE) ? TURN_BLACK : TURN_WHITE;
 
-        // Find mover's king square
         Bitboard moverKings = occupancy_bitboards[
-            PIECE_TYPE_KING | (moverColor == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+            PIECE_TYPE_KING |
+            (moverColor == TURN_WHITE
+                ? PIECE_COLOR_WHITE
+                : PIECE_COLOR_BLACK)
         ];
 
         bool in_check = false;
+
         if (moverKings)
         {
-            Square kingSq = Square(__builtin_ctzll(moverKings));
-            Bitboard opponentAttacks = (turn == TURN_WHITE) ? attack_bitboard_white : attack_bitboard_black;
-            if (opponentAttacks & SquareMask(kingSq))
-                in_check = true;
+            Square kingSq =
+                Square(__builtin_ctzll(moverKings));
+
+            Bitboard opponentAttacks =
+                (turn == TURN_WHITE)
+                    ? attack_bitboard_white
+                    : attack_bitboard_black;
+
+            in_check =
+                opponentAttacks & SquareMask(kingSq);
         }
 
         UndoMove(move);
 
-        if (in_check)
-            continue;
-
-        legal_moves.push_back(move);
+        if (!in_check)
+        {
+            moves[write++] = move;
+        }
     }
 
-    return legal_moves;
+    moves.resize(write);
+    return moves;
 }
 
 
 std::vector<Move> ChessBoard::GetLegalCaptures()
 {
     std::vector<Move> moves;
+    moves.reserve(GetNumCaptures());
+
     GetLegalPawnMoves(moves);
     GetLegalKnightMoves(moves);
     GetLegalBishopMoves(moves);
     GetLegalRookMoves(moves);
     GetLegalQueenMoves(moves);
     GetLegalKingMoves(moves);
-    
-    std::vector<Move> legal_captures;
-    legal_captures.reserve(moves.size());
 
-    for (Move move : moves)
+    size_t write = 0;
+
+    for (size_t read = 0; read < moves.size(); ++read)
     {
-        // Only consider captures.
+        Move move = moves[read];
+
         if (move.captured == NULL_PIECE)
             continue;
-        
+
         MakeMove(move);
 
-        // After MakeMove, `turn` is the opponent. We need to check
-        // whether the side that just moved (mover) is now in check.
-        TurnColor moverColor = (turn == TURN_WHITE) ? TURN_BLACK : TURN_WHITE;
+        TurnColor moverColor =
+            (turn == TURN_WHITE) ? TURN_BLACK : TURN_WHITE;
 
-        // Find mover's king square
         Bitboard moverKings = occupancy_bitboards[
-            PIECE_TYPE_KING | (moverColor == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+            PIECE_TYPE_KING |
+            (moverColor == TURN_WHITE
+                ? PIECE_COLOR_WHITE
+                : PIECE_COLOR_BLACK)
         ];
 
         bool in_check = false;
+
         if (moverKings)
         {
-            Square kingSq = Square(__builtin_ctzll(moverKings));
-            Bitboard opponentAttacks = (turn == TURN_WHITE) ? attack_bitboard_white : attack_bitboard_black;
-            if (opponentAttacks & SquareMask(kingSq))
-                in_check = true;
-        }
+            Square kingSq =
+                Square(__builtin_ctzll(moverKings));
 
+            Bitboard opponentAttacks =
+                (turn == TURN_WHITE)
+                    ? attack_bitboard_white
+                    : attack_bitboard_black;
+
+            in_check =
+                opponentAttacks & SquareMask(kingSq);
+        }
 
         UndoMove(move);
 
-        if (in_check)
-            continue;
-        
-        legal_captures.push_back(move);
+        if (!in_check)
+        {
+            moves[write++] = move;
+        }
     }
 
-    return legal_captures;
+    moves.resize(write);
+    return moves;
+}
+
+
+size_t ChessBoard::GetNumMoves() const
+{
+    const Bitboard white = occupancy_bitboard_white;
+    const Bitboard black = occupancy_bitboard_black;
+
+    const Bitboard own   = (turn == TURN_WHITE) ? white : black;
+
+    const int color =
+        (turn == TURN_WHITE) ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK;
+
+    // If attack_bitboards contains the union of attacks for each piece type:
+    const Bitboard pawn_attacks   = attack_bitboards[PIECE_TYPE_PAWN   | color];
+    const Bitboard knight_attacks = attack_bitboards[PIECE_TYPE_KNIGHT | color];
+    const Bitboard bishop_attacks = attack_bitboards[PIECE_TYPE_BISHOP | color];
+    const Bitboard rook_attacks   = attack_bitboards[PIECE_TYPE_ROOK   | color];
+    const Bitboard queen_attacks  = attack_bitboards[PIECE_TYPE_QUEEN  | color];
+    const Bitboard king_attacks   = attack_bitboards[PIECE_TYPE_KING   | color];
+
+    const Bitboard attacks =
+        pawn_attacks |
+        knight_attacks |
+        bishop_attacks |
+        rook_attacks |
+        queen_attacks |
+        king_attacks;
+
+    // Can't move onto a square occupied by one of our own pieces.
+    const Bitboard moves = attacks & ~own;
+
+    return std::popcount(moves);
+}
+
+
+size_t ChessBoard::GetNumCaptures() const
+{
+    const Bitboard white = occupancy_bitboard_white;
+    const Bitboard black = occupancy_bitboard_black;
+
+    const Bitboard own   = (turn == TURN_WHITE) ? white : black;
+    const Bitboard enemy = (turn == TURN_WHITE) ? black : white;
+
+    const int color =
+        (turn == TURN_WHITE) ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK;
+
+    // If attack_bitboards contains the union of attacks for each piece type:
+    const Bitboard pawn_attacks   = attack_bitboards[PIECE_TYPE_PAWN   | color];
+    const Bitboard knight_attacks = attack_bitboards[PIECE_TYPE_KNIGHT | color];
+    const Bitboard bishop_attacks = attack_bitboards[PIECE_TYPE_BISHOP | color];
+    const Bitboard rook_attacks   = attack_bitboards[PIECE_TYPE_ROOK   | color];
+    const Bitboard queen_attacks  = attack_bitboards[PIECE_TYPE_QUEEN  | color];
+    const Bitboard king_attacks   = attack_bitboards[PIECE_TYPE_KING   | color];
+
+    const Bitboard attacks =
+        pawn_attacks |
+        knight_attacks |
+        bishop_attacks |
+        rook_attacks |
+        queen_attacks |
+        king_attacks;
+
+    // Can't move onto a square occupied by one of our own pieces.
+    const Bitboard moves = attacks & ~own;
+
+    return std::popcount(moves & enemy);
 }
 
 
@@ -1839,6 +2053,35 @@ void ChessBoard::GetNumLegalMovesAndCaptures(
 
     moves_count = std::popcount(moves);
     captures_count = std::popcount(moves & enemy);
+}
+
+
+bool ChessBoard::HasPseudoLegalCapture() const
+{
+    //const Bitboard own =
+    //    (turn == TURN_WHITE)
+    //        ? occupancy_bitboard_white
+    //        : occupancy_bitboard_black;
+
+    const Bitboard enemy =
+        (turn == TURN_WHITE)
+            ? occupancy_bitboard_black
+            : occupancy_bitboard_white;
+
+    const int color =
+        (turn == TURN_WHITE)
+            ? PIECE_COLOR_WHITE
+            : PIECE_COLOR_BLACK;
+
+    const Bitboard attacks =
+        attack_bitboards[PIECE_TYPE_PAWN | color]   |
+        attack_bitboards[PIECE_TYPE_KNIGHT | color] |
+        attack_bitboards[PIECE_TYPE_BISHOP | color] |
+        attack_bitboards[PIECE_TYPE_ROOK | color]   |
+        attack_bitboards[PIECE_TYPE_QUEEN | color]  |
+        attack_bitboards[PIECE_TYPE_KING | color];
+
+    return (attacks & enemy) != 0;
 }
 
 
@@ -2073,5 +2316,59 @@ Square ChessBoard::PopKings() const
     ];
 
     return PopBitboard(kings);
+}
+
+
+Bitboard ChessBoard::GetPawns() const
+{
+    return occupancy_bitboards[
+        PIECE_TYPE_PAWN |
+        (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+}
+
+
+Bitboard ChessBoard::GetKnights() const
+{
+    return occupancy_bitboards[
+        PIECE_TYPE_KNIGHT |
+        (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+}
+
+
+Bitboard ChessBoard::GetBishops() const
+{
+    return occupancy_bitboards[
+        PIECE_TYPE_BISHOP |
+        (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+}
+
+
+Bitboard ChessBoard::GetRooks() const
+{
+    return occupancy_bitboards[
+        PIECE_TYPE_ROOK |
+        (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+}
+
+
+Bitboard ChessBoard::GetQueens() const
+{
+    return occupancy_bitboards[
+        PIECE_TYPE_QUEEN |
+        (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
+}
+
+
+Bitboard ChessBoard::GetKings() const
+{
+    return occupancy_bitboards[
+        PIECE_TYPE_KING |
+        (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
+    ];
 }
 
