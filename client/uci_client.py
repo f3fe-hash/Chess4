@@ -162,6 +162,9 @@ class UCIClient:
 
         return self.send(command)
 
+    def send_fen(self, fen):
+        return self.send("position fen " + fen)
+
     # --------------------------------------------------------
     # Search
     # --------------------------------------------------------

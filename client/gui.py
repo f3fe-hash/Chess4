@@ -1,7 +1,7 @@
 import tkinter as tk
 import threading
 import tkinter.font as tkfont
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
 from pathlib import Path
 from time import monotonic
 
@@ -228,6 +228,26 @@ class ChessGUI:
             fill="x"
         )
 
+        self.import_fen_button = tk.Button(
+            self.control_frame,
+            text="Import FEN",
+            command=self.import_fen,
+            bg="#3a424b", fg="#f4f1ea", activebackground="#56616d",
+            relief="flat", padx=10, pady=8,
+            font=("DejaVu Sans", 12, "bold")
+        )
+        self.import_fen_button.pack(fill="x", pady=(6, 0))
+
+        self.export_fen_button = tk.Button(
+            self.control_frame,
+            text="Export FEN",
+            command=self.export_fen,
+            bg="#3a424b", fg="#f4f1ea", activebackground="#56616d",
+            relief="flat", padx=10, pady=8,
+            font=("DejaVu Sans", 12, "bold")
+        )
+        self.export_fen_button.pack(fill="x", pady=(6, 0))
+
         self.time_control_var = tk.StringVar(value=self.time_control)
         self.time_control_menu = tk.OptionMenu(
             self.control_frame, self.time_control_var, *TIME_CONTROLS,
@@ -390,6 +410,74 @@ class ChessGUI:
     # New Game
     # ========================================================
 
+    def import_fen(self):
+        fen = simpledialog.askstring(
+            "Import FEN",
+            "Paste a FEN position:",
+            parent=self.root,
+            initialvalue=self.board.to_fen()
+        )
+        if fen is None:
+            return
+
+        try:
+            imported_board = ChessBoard()
+            imported_board.load_fen(fen)
+        except ValueError as error:
+            messagebox.showerror("Invalid FEN", str(error))
+            return
+
+        if not self.client.connected:
+            messagebox.showerror(
+                "Connection Error",
+                "The UCI server is not connected."
+            )
+            return
+
+        if self.engine_thinking:
+            self.ignore_next_bestmove = True
+            self.client.stop()
+
+        self.board = imported_board
+        self.last_move = None
+        self.dragging = False
+        self.drag_piece = None
+        self.drag_from = None
+        self.engine_thinking = False
+        self.game_over = False
+        self.clock_started = False
+        self.draw_board()
+
+        if not self.client.send_fen(self.board.to_fen()):
+            messagebox.showerror(
+                "Connection Error",
+                "Failed to send the imported position."
+            )
+            return
+
+        self.set_status(
+            "FEN imported. Your turn."
+            if self.board.turn == "w" else "FEN imported."
+        )
+
+        if self.board.turn == "b":
+            self.engine_thinking = True
+            self.set_status("FEN imported. Engine thinking...")
+            if not self.client.go(
+                self.white_time * 1000,
+                self.black_time * 1000,
+                self.increment * 1000
+            ):
+                self.engine_thinking = False
+                self.set_status("Failed to start engine search.")
+
+    def export_fen(self):
+        fen = self.board.to_fen()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(fen)
+        self.root.update()
+        messagebox.showinfo("Export FEN", "FEN copied to the clipboard.")
+
     def new_game(self):
         if not self.client.connected:
             messagebox.showerror(
@@ -422,9 +510,7 @@ class ChessGUI:
             )
             return
 
-        if not self.client.send_position(
-            self.board.move_history
-        ):
+        if not self.client.send_fen(self.board.to_fen()):
             messagebox.showerror(
                 "Connection Error",
                 "Failed to reset the engine position."
@@ -492,7 +578,10 @@ class ChessGUI:
             button_font_size > 10
             and max(
                 button_font_measure.measure(label)
-                for label in ("New game", "Reconnect", "Resign", "Quit")
+                for label in (
+                    "New game", "Import FEN", "Export FEN",
+                    "Reconnect", "Resign", "Quit"
+                )
             ) > available_width - (horizontal_padding * 2)
         ):
             button_font_size -= 1
@@ -502,6 +591,8 @@ class ChessGUI:
 
         for button in (
             self.new_game_button,
+            self.import_fen_button,
+            self.export_fen_button,
             self.reconnect_button,
             self.resign_button,
             self.quit_button
@@ -1002,9 +1093,7 @@ class ChessGUI:
         # Send position
         # ----------------------------------------------------
 
-        if not self.client.send_position(
-            self.board.move_history
-        ):
+        if not self.client.send_fen(self.board.to_fen()):
             self.set_status(
                 "Failed to send position to server."
             )

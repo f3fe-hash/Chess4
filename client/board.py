@@ -24,7 +24,111 @@ class ChessBoard:
         }
 
         self.en_passant = None
+        self.halfmove_clock = 0
+        self.fullmove_number = 1
         self.move_history = []
+
+    def load_fen(self, fen):
+        fields = fen.strip().split()
+
+        if len(fields) not in (4, 5, 6):
+            raise ValueError("FEN must contain 4, 5, or 6 fields")
+
+        ranks = fields[0].split("/")
+        if len(ranks) != 8:
+            raise ValueError("FEN piece placement must contain 8 ranks")
+
+        board = []
+        for rank in ranks:
+            row = []
+            for character in rank:
+                if character in "12345678":
+                    row.extend([None] * int(character))
+                elif character in "PNBRQKpnbrqk":
+                    row.append(character)
+                else:
+                    raise ValueError(f"Invalid FEN piece: {character}")
+
+            if len(row) != 8:
+                raise ValueError("Each FEN rank must contain 8 squares")
+            board.append(row)
+
+        if fields[1] not in ("w", "b"):
+            raise ValueError("FEN active color must be 'w' or 'b'")
+
+        castling = {right: False for right in "KQkq"}
+        if fields[2] != "-":
+            if any(right not in castling for right in fields[2]):
+                raise ValueError("Invalid FEN castling rights")
+            for right in fields[2]:
+                castling[right] = True
+
+        en_passant = fields[3]
+        if en_passant != "-":
+            if (
+                len(en_passant) != 2
+                or en_passant[0] not in "abcdefgh"
+                or en_passant[1] not in "36"
+            ):
+                raise ValueError("Invalid FEN en-passant square")
+        else:
+            en_passant = None
+
+        halfmove_clock = 0
+        fullmove_number = 1
+        if len(fields) >= 5:
+            try:
+                halfmove_clock = int(fields[4])
+            except ValueError as error:
+                raise ValueError("Invalid FEN halfmove clock") from error
+            if halfmove_clock < 0:
+                raise ValueError("Invalid FEN halfmove clock")
+
+        if len(fields) == 6:
+            try:
+                fullmove_number = int(fields[5])
+            except ValueError as error:
+                raise ValueError("Invalid FEN fullmove number") from error
+            if fullmove_number < 1:
+                raise ValueError("Invalid FEN fullmove number")
+
+        self.board = board
+        self.turn = fields[1]
+        self.castling = castling
+        self.en_passant = en_passant
+        self.halfmove_clock = halfmove_clock
+        self.fullmove_number = fullmove_number
+        self.move_history = []
+
+    def to_fen(self):
+        placement = []
+        for row in self.board:
+            empty = 0
+            rank = []
+            for piece in row:
+                if piece is None:
+                    empty += 1
+                else:
+                    if empty:
+                        rank.append(str(empty))
+                        empty = 0
+                    rank.append(piece)
+            if empty:
+                rank.append(str(empty))
+            placement.append("".join(rank))
+
+        castling = "".join(
+            right for right in "KQkq" if self.castling[right]
+        ) or "-"
+
+        return " ".join((
+            "/".join(placement),
+            self.turn,
+            castling,
+            self.en_passant or "-",
+            str(self.halfmove_clock),
+            str(self.fullmove_number),
+        ))
 
     # ========================================================
     # Coordinate conversion
@@ -260,6 +364,7 @@ class ChessBoard:
             return False
 
         captured = self.board[to_row][to_col]
+        moving_color = self.turn
 
         # ----------------------------------------------------
         # En passant
@@ -279,6 +384,7 @@ class ChessBoard:
                 and captured_piece.lower() == "p"
             ):
                 self.board[captured_row][to_col] = None
+                captured = captured_piece
 
         # ----------------------------------------------------
         # Move piece
@@ -378,6 +484,14 @@ class ChessBoard:
         # ----------------------------------------------------
         # Turn
         # ----------------------------------------------------
+
+        if piece.lower() == "p" or captured is not None:
+            self.halfmove_clock = 0
+        else:
+            self.halfmove_clock += 1
+
+        if moving_color == "b":
+            self.fullmove_number += 1
 
         self.turn = self.opposite_color(self.turn)
 

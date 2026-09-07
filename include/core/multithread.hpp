@@ -12,7 +12,7 @@
 // Errors
 #include <exception>
 
-constexpr int MAX_THREADS = 12;
+constexpr int MAX_THREADS = 24;
 constexpr int MAX_JOBS = 1024;
 
 
