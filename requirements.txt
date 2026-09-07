@@ -2,3 +2,5 @@
 # tkinter is part of the Python standard library but may need to be installed
 # separately from the OS package manager (for example: python3-tk on Debian/Ubuntu).
 Pillow>=10.0
+
+requests
