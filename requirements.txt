@@ -4,3 +4,4 @@
 Pillow>=10.0
 
 requests
+groq>=0.31.0

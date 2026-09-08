@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import os
 
-import requests
+from groq import Groq
 
 
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 MAX_HISTORY_MESSAGES = 12
 MAX_REPLY_LENGTH = 140
@@ -19,12 +18,7 @@ class GroqChat:
 			raise ValueError("GROQ_API_KEY is not set")
 
 		self.model = model
-		self.session = requests.Session()
-		self.session.headers.update({
-			"Authorization": f"Bearer {api_key}",
-			"Content-Type": "application/json",
-			"User-Agent": "CustomUCIChessBot/1.0",
-		})
+		self.client = Groq(api_key=api_key, timeout=30.0)
 		self.messages: list[dict[str, str]] = [
 			{
 				"role": "system",
@@ -42,25 +36,19 @@ class GroqChat:
 			"content": f"{username} says: {text}",
 		})
 
-		response = self.session.post(
-			GROQ_API_URL,
-			json={
-				"model": self.model,
-				"messages": self.messages,
-				"temperature": 0.7,
-				"max_tokens": 80,
-			},
-			timeout=30,
+		completion = self.client.chat.completions.create(
+			model=self.model,
+			messages=self.messages,
+			temperature=0.7,
+			max_completion_tokens=256,
+			reasoning_effort="low",
 		)
-		response.raise_for_status()
 
-		data = response.json()
-		choices = data.get("choices", [])
+		choices = completion.choices
 		if not choices:
 			raise RuntimeError("Groq returned no chat choices")
 
-		message = choices[0].get("message", {})
-		reply = message.get("content")
+		reply = choices[0].message.content
 		if not isinstance(reply, str) or not reply.strip():
 			raise RuntimeError("Groq returned an empty chat reply")
 

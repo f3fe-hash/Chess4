@@ -1,5 +1,6 @@
 services:
   chess:
+    profiles: ["local-engine"]
     build:
       context: .
     command: ["./Chess"]
@@ -23,12 +24,9 @@ services:
     build:
       context: .
     command: ["python3", "lichess/lichess.py"]
-    depends_on:
-      chess:
-        condition: service_healthy
     environment:
       LICHESS_TOKEN: ${LICHESS_TOKEN:?Set LICHESS_TOKEN in .env or the shell}
       GROQ_API_KEY: ${GROQ_API_KEY:?Set GROQ_API_KEY in .env or the shell}
-      UCI_HOST: chess
-      UCI_PORT: "8080"
+      UCI_HOST: ${UCI_HOST:?Set UCI_HOST to the engine machine address}
+      UCI_PORT: ${UCI_PORT:-8080}
     restart: unless-stopped
