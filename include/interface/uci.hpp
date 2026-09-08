@@ -102,7 +102,7 @@ class UCI
 
     static bool IsInteger(const std::string& string);
 
-    std::int64_t UCI::ParseInteger(
+    std::int64_t ParseInteger(
         const std::string& string,
         std::int64_t default_value = 0);
 
