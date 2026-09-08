@@ -122,16 +122,16 @@ bool UCI::IsInteger(const std::string& string)
 }
 
 
-int UCI::ParseInteger(
+std::int64_t UCI::ParseInteger(
     const std::string& string,
-    int default_value)
+    std::int64_t default_value)
 {
     if (!IsInteger(string))
         return default_value;
 
     try
     {
-        return std::stoi(string);
+        return std::stoll(string);
     }
     catch (...)
     {
@@ -170,6 +170,9 @@ std::string UCI::HandleNewGame()
     std::lock_guard<std::mutex> lock(board_mutex);
 
     board->LoadFEN(STARTPOS_FEN);
+
+    original_white_time = DurationMs(0);
+    original_black_time = DurationMs(0);
 
     return "";
 }
@@ -412,7 +415,7 @@ std::string UCI::HandleGo(
         {
             search_depth =
                 std::max(
-                    1,
+                    std::int64_t(1),
                     ParseInteger(
                         tokens[++i],
                         100));
@@ -425,7 +428,7 @@ std::string UCI::HandleGo(
             search_time =
                 DurationMs(
                     std::max(
-                        1,
+                        std::int64_t(1),
                         ParseInteger(
                             tokens[++i],
                             1)));
@@ -453,7 +456,7 @@ std::string UCI::HandleGo(
             white_time =
                 DurationMs(
                     std::max(
-                        0,
+                        std::int64_t(0),
                         ParseInteger(
                             tokens[++i],
                             0)));
@@ -467,7 +470,7 @@ std::string UCI::HandleGo(
             black_time =
                 DurationMs(
                     std::max(
-                        0,
+                        std::int64_t(0),
                         ParseInteger(
                             tokens[++i],
                             0)));
@@ -481,7 +484,7 @@ std::string UCI::HandleGo(
             white_increment =
                 DurationMs(
                     std::max(
-                        0,
+                        std::int64_t(0),
                         ParseInteger(
                             tokens[++i],
                             0)));
@@ -492,7 +495,7 @@ std::string UCI::HandleGo(
             black_increment =
                 DurationMs(
                     std::max(
-                        0,
+                        std::int64_t(0),
                         ParseInteger(
                             tokens[++i],
                             0)));
@@ -505,6 +508,19 @@ std::string UCI::HandleGo(
         {
             ponder_search = true;
         }
+    }
+
+    constexpr std::int64_t INFINITE_TIME_THRESHOLD = 100000000000LL;
+    if (white_time.count() > INFINITE_TIME_THRESHOLD)
+    {
+        // 30 minutes.
+        white_time = DurationMs(30 * 60 * 1000);
+    }
+
+    if (black_time.count() > INFINITE_TIME_THRESHOLD)
+    {
+        // 30 minutes.
+        black_time = DurationMs(30 * 60 * 1000);
     }
 
     /*

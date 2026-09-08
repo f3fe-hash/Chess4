@@ -36,8 +36,8 @@ class UCI
     std::string pending_output;
 
     // Search parameters.
-    int search_depth = 100;
-    uint64_t search_node_limit = 0;
+    std::int64_t search_depth = 100;
+    std::int64_t search_node_limit = 0;
 
     DurationMs search_time{0};
 
@@ -102,9 +102,9 @@ class UCI
 
     static bool IsInteger(const std::string& string);
 
-    static int ParseInteger(
+    std::int64_t UCI::ParseInteger(
         const std::string& string,
-        int default_value = 0);
+        std::int64_t default_value = 0);
 
 public:
     UCI(
