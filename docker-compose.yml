@@ -9,7 +9,7 @@ services:
     healthcheck:
       test:
         - CMD
-        - python
+        - python3
         - -c
         - >-
           import socket;
@@ -22,7 +22,7 @@ services:
   lichess:
     build:
       context: .
-    command: ["python", "lichess/lichess.py"]
+    command: ["python3", "lichess/lichess.py"]
     depends_on:
       chess:
         condition: service_healthy

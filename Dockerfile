@@ -14,7 +14,7 @@ RUN cmake -S . -B /build \
         -DCMAKE_BUILD_TYPE=Release \
     && cmake --build /build --target Chess --parallel
 
-FROM python:3.12-slim-bookworm
+FROM gcc:15-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -22,7 +22,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y python3-pip libncurses6 \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m pip install --break-system-packages --no-cache-dir -r requirements.txt
 
 COPY --from=engine-builder /build/Chess ./Chess
 COPY lichess ./lichess
