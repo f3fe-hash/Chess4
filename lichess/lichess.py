@@ -317,14 +317,10 @@ class UCIClient:
         winc_ms: Optional[int],
         binc_ms: Optional[int],
         movetime_ms: Optional[int],
-    ) -> str:
+    ) -> tuple[str, Optional[str]]:
         """
-        Prefer full clock information.
-
-        This lets your C++ engine's existing CalculateThinkTime()
-        logic receive wtime/btime/winc/binc through UCI.
-
-        If clock data isn't available, fall back to movetime.
+        Returns:
+            (bestmove, evaluation)
         """
 
         if (
@@ -348,8 +344,45 @@ class UCIClient:
 
             self.send(f"go movetime {movetime_ms}")
 
+        evaluation = None
+
         while True:
             line = self.read_line()
+
+            # Example:
+            # info depth 12 score cp 35 ...
+            if line.startswith("info "):
+                parts = line.split()
+
+                try:
+                    score_index = parts.index("score")
+
+                    if score_index + 2 < len(parts):
+                        score_type = parts[score_index + 1]
+                        score_value = parts[score_index + 2]
+
+                        # Centipawns
+                        if score_type == "cp":
+                            cp = int(score_value)
+
+                            if cp > 0:
+                                evaluation = f"{cp / 100:+.2f}"
+                            else:
+                                evaluation = str(cp)
+
+                        # Mate score
+                        elif score_type == "mate":
+                            mate = int(score_value)
+
+                            if mate > 0:
+                                evaluation = f"mate +{mate}"
+                            else:
+                                evaluation = f"mate {mate}"
+
+                except (ValueError, IndexError):
+                    pass
+
+                continue
 
             if not line.startswith("bestmove"):
                 continue
@@ -368,13 +401,7 @@ class UCIClient:
                     "Engine returned bestmove (none)"
                 )
 
-            return move
-
-    def stop(self) -> None:
-        try:
-            self.send("stop")
-        except Exception:
-            pass
+            return move, evaluation
 
 
 # ============================================================
@@ -389,6 +416,9 @@ class GameWorker:
     chat: GroqChat
 
     color: Optional[str] = None
+
+    last_move: Optional[str] = None
+    evaluation: Optional[str] = None
 
     # Number of plies in the last state for which we completed
     # processing. None means no state has been processed yet.
@@ -457,7 +487,13 @@ class GameWorker:
         if not text or username.lower() == self.bot_id.lower():
             return
 
-        reply = self.chat.reply(username, text)
+        reply = self.chat.reply(
+            username,
+            text,
+            last_move=self.last_move,
+            evaluation=self.evaluation,
+        )
+
         self.api.send_chat(self.game_id, reply, room=room)
         log(f"[{self.game_id}] Chat reply to {username}: {reply}")
 
@@ -475,6 +511,8 @@ class GameWorker:
         """
 
         ply = len(moves)
+
+        self.last_move = moves[-1] if moves else None
 
         with self.state_lock:
             if (
@@ -516,7 +554,7 @@ class GameWorker:
             wtime_ms = max(0, wtime_ms - MOVE_OVERHEAD_MS)
             btime_ms = max(0, btime_ms - MOVE_OVERHEAD_MS)
 
-        move = self.engine.search(
+        move, evaluation = self.engine.search(
             wtime_ms=wtime_ms,
             btime_ms=btime_ms,
             winc_ms=winc_ms,
@@ -524,8 +562,11 @@ class GameWorker:
             movetime_ms=1000,
         )
 
+        self.evaluation = evaluation
+
         log(
-            f"[{self.game_id}] Engine selected {move}"
+            f"[{self.game_id}] Engine selected {move} "
+            f"(eval: {evaluation})"
         )
 
         # Submit only after the engine has produced a move.

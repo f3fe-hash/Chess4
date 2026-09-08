@@ -601,10 +601,30 @@ void UCI::SearchThread()
     {
         std::lock_guard<std::mutex> lock(board_mutex);
 
-        /*
-         * UCI requires bestmove even if the search was stopped.
-         */
-        std::string output =
+        std::string output;
+
+        // Output the final evaluation.
+        if (result.mate_in_ply >= 0)
+        {
+            output =
+                "info depth " +
+                std::to_string(result.depth) +
+                " score mate " +
+                std::to_string(result.mate_in_ply) +
+                "\n";
+        }
+        else
+        {
+            output =
+                "info depth " +
+                std::to_string(result.depth) +
+                " score cp " +
+                std::to_string(result.eval) +
+                "\n";
+        }
+
+        // UCI requires bestmove even if the search was stopped.
+        output +=
             "bestmove " +
             MoveToString(result.move) +
             "\n";
@@ -618,17 +638,21 @@ void UCI::SearchThread()
     // Print useful debug output
     std::cerr
         << "[move " << MoveToString(result.move) << "] ";
-    
+
     // If a mate was found, print it.
     if (result.mate_in_ply >= 0)
     {
         std::cerr
             << "[mate" << result.mate_in_ply << "] ";
     }
-    
+
     std::cerr
         << "[depth " << result.depth << "] "
-        << "[evaluation " << std::fixed << std::setprecision(2) << result.eval / 100 << "] "
+        << "[evaluation "
+        << std::fixed
+        << std::setprecision(2)
+        << result.eval / 100
+        << "] "
         << "[nodes " << result.nodes_searched << "]"
         << '\n';
 
