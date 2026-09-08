@@ -48,6 +48,11 @@ from typing import Optional
 
 import requests
 
+try:
+    from .chat import GroqChat
+except ImportError:
+    from chat import GroqChat
+
 
 # ============================================================
 # Configuration
@@ -56,12 +61,13 @@ import requests
 LICHESS_API = "https://lichess.org"
 
 LICHESS_TOKEN = os.environ.get("LICHESS_TOKEN")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
-UCI_HOST = "127.0.0.1"
-UCI_PORT = 8080
+UCI_HOST = os.environ.get("UCI_HOST", "127.0.0.1")
+UCI_PORT = int(os.environ.get("UCI_PORT", "8080"))
 
 # Maximum number of games this process will play simultaneously.
-MAX_GAMES = 8
+MAX_GAMES = 32
 
 # Challenge policy.
 AUTO_ACCEPT_CHALLENGES = True
@@ -180,6 +186,19 @@ class LichessAPI:
     def make_move(self, game_id: str, move: str) -> None:
         response = self.session.post(
             f"{LICHESS_API}/api/bot/game/{game_id}/move/{move}",
+            timeout=30,
+        )
+        response.raise_for_status()
+
+    def send_chat(
+        self,
+        game_id: str,
+        text: str,
+        room: str = "player",
+    ) -> None:
+        response = self.session.post(
+            f"{LICHESS_API}/api/bot/game/{game_id}/chat",
+            data={"room": room, "text": text},
             timeout=30,
         )
         response.raise_for_status()
@@ -367,6 +386,7 @@ class GameWorker:
     api: LichessAPI
     game_id: str
     bot_id: str
+    chat: GroqChat
 
     color: Optional[str] = None
 
@@ -428,6 +448,18 @@ class GameWorker:
         if self.engine is not None:
             self.engine.close()
             self.engine = None
+
+    def process_chat(self, event: dict) -> None:
+        username = event.get("username", "")
+        text = event.get("text", "").strip()
+        room = event.get("room", "player")
+
+        if not text or username.lower() == self.bot_id.lower():
+            return
+
+        reply = self.chat.reply(username, text)
+        self.api.send_chat(self.game_id, reply, room=room)
+        log(f"[{self.game_id}] Chat reply to {username}: {reply}")
 
     def process_position(
         self,
@@ -553,6 +585,14 @@ class GameWorker:
                         event,
                     )
 
+                elif event_type == "chatLine":
+                    try:
+                        self.process_chat(event)
+                    except Exception as exc:
+                        log_error(
+                            f"[{self.game_id}] Chat error: {exc}"
+                        )
+
         except requests.HTTPError as exc:
             log_error(
                 f"[{self.game_id}] Lichess HTTP error: {exc}"
@@ -655,6 +695,7 @@ class BotManager:
                 api=self.api,
                 game_id=game_id,
                 bot_id=self.bot_id,
+                chat=GroqChat(GROQ_API_KEY),
             )
 
             self.games[game_id] = worker
@@ -694,6 +735,13 @@ def main() -> None:
             "LICHESS_TOKEN is not set.\n"
             "Run:\n"
             "  export LICHESS_TOKEN='your_token'"
+        )
+
+    if not GROQ_API_KEY:
+        raise RuntimeError(
+            "GROQ_API_KEY is not set.\n"
+            "Run:\n"
+            "  export GROQ_API_KEY='your_key'"
         )
 
     api = LichessAPI(LICHESS_TOKEN)

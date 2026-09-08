@@ -1,7 +1,9 @@
 build
 .vscode
 .venv
-client/__pycache__
+*/__pycache__
 
 perf/out.*
 perf/perf.*
+
+.env

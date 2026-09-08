@@ -1,0 +1,34 @@
+services:
+  chess:
+    build:
+      context: .
+    command: ["./Chess"]
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import socket;
+          s = socket.create_connection(("127.0.0.1", 8080), 2);
+          s.close()
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  lichess:
+    build:
+      context: .
+    command: ["python", "lichess/lichess.py"]
+    depends_on:
+      chess:
+        condition: service_healthy
+    environment:
+      LICHESS_TOKEN: ${LICHESS_TOKEN:?Set LICHESS_TOKEN in .env or the shell}
+      GROQ_API_KEY: ${GROQ_API_KEY:?Set GROQ_API_KEY in .env or the shell}
+      UCI_HOST: chess
+      UCI_PORT: "8080"
+    restart: unless-stopped

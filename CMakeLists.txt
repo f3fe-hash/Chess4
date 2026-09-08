@@ -9,6 +9,9 @@ cmake_minimum_required(VERSION 3.12)
 
 project(Chess VERSION 1.0.0 LANGUAGES C CXX)
 
+option(CHESS_UCI_SERVER "Build Chess as a TCP UCI server" OFF)
+option(BUILD_CHESS_TESTS "Build Chess unit tests" ON)
+
 # Set C++ standard to C++26, and make it required
 
 set(CMAKE_CXX_STANDARD 26)
@@ -119,35 +122,43 @@ add_executable(${PROJECT_NAME} main.cpp)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE chess)
 
+if(CHESS_UCI_SERVER)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE UCI_SERVER)
+else()
+    target_compile_definitions(${PROJECT_NAME} PRIVATE MATCH_TEST)
+endif()
+
 # ====================
 # Unit tests
 # ====================
 
-include(FetchContent)
+if(BUILD_CHESS_TESTS)
+    include(FetchContent)
 
-FetchContent_Declare(
-    googletest
-    URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
-)
+    FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
+    )
 
-FetchContent_MakeAvailable(googletest)
+    FetchContent_MakeAvailable(googletest)
 
-enable_testing()
+    enable_testing()
 
-file(GLOB_RECURSE TEST_FILES tests/*.cpp)
+    file(GLOB_RECURSE TEST_FILES tests/*.cpp)
 
-add_executable(chess_tests ${TEST_FILES})
+    add_executable(chess_tests ${TEST_FILES})
 
-target_link_libraries(chess_tests
-    PRIVATE
-    chess
-    GTest::gtest_main
-)
+    target_link_libraries(chess_tests
+        PRIVATE
+        chess
+        GTest::gtest_main
+    )
 
-add_test(NAME chess_tests COMMAND chess_tests)
+    add_test(NAME chess_tests COMMAND chess_tests)
 
-add_custom_target(chess_tests_verbose
-    COMMAND chess_tests
-    DEPENDS chess_tests
-    USES_TERMINAL
-)
+    add_custom_target(chess_tests_verbose
+        COMMAND chess_tests
+        DEPENDS chess_tests
+        USES_TERMINAL
+    )
+endif()

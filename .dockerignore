@@ -1,0 +1,6 @@
+build/
+.venv/
+.git/
+perf/*.data
+perf/out.*
+**/__pycache__/
