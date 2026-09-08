@@ -24,9 +24,10 @@ services:
     build:
       context: .
     command: ["python3", "lichess/lichess.py"]
+    network_mode: host
     environment:
       LICHESS_TOKEN: ${LICHESS_TOKEN:?Set LICHESS_TOKEN in .env or the shell}
       GROQ_API_KEY: ${GROQ_API_KEY:?Set GROQ_API_KEY in .env or the shell}
-      UCI_HOST: ${UCI_HOST:?Set UCI_HOST to the engine machine address}
+      UCI_HOST: ${UCI_HOST:-127.0.0.1}
       UCI_PORT: ${UCI_PORT:-8080}
     restart: unless-stopped
