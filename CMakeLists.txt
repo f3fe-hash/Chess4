@@ -26,7 +26,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # extra warnings,
 # high optimization
 
-add_compile_options(-Wall -Wextra -Ofast)
+add_compile_options(-Wall -Wextra -Og -g)
 
 # Source files from src/*.cpp & src/*.c
 

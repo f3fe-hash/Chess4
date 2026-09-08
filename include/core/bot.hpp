@@ -42,7 +42,6 @@ class ChessBot
         Move move;
         int move_idx;
         bool is_root_search;
-        int64_t mate_in;
     };
 
     ChessBoardEvaluator evaluator;
@@ -69,7 +68,7 @@ class ChessBot
         return board->GetZobristHash();
     }
 
-    Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply, int64_t& mate_in);
+    Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply);
     Evaluation SearchCore(SearchParams& params);
     MoveResult EvaluateRootMove(SearchParams params);
 

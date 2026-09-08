@@ -248,10 +248,10 @@ Evaluation ChessBot::SearchCore(SearchParams& params)
     int extension = DepthExtension(move);
 
     // LMR values
-#define LMR_LOW -1 // Low
-#define LMR_MED -2 // Medium
-#define LMR_HIG -3 // High
-#define LMR_EXT -3 // Extreme - disabled for now
+#define LMR_LOW -0 // Low
+#define LMR_MED -1 // Medium
+#define LMR_HIG -2 // High
+#define LMR_EXT -2 // Extreme - disabled for now
 
     // LMR
     bool endgame = evaluator.IsEndgame();
@@ -292,9 +292,35 @@ Evaluation ChessBot::SearchCore(SearchParams& params)
             alpha,
             beta,
             search_depth,
-            ply + 1,
-            params.mate_in
+            ply + 1
         );
+    
+    if (board->GetTurnColor() == TURN_WHITE)
+    {
+        if (eval > alpha)
+        {
+            // LMR was bad. It improved the eval. That was probably a good move.
+            eval = MainSearch(
+                alpha,
+                beta,
+                depth - 1,
+                ply + 1
+            );
+        }
+    }
+    else
+    {
+        if (eval < beta)
+        {
+            // LMR was bad. It improved the eval. That was probably a good move.
+            eval = MainSearch(
+                alpha,
+                beta,
+                depth - 1,
+                ply + 1
+            );
+        }
+    }
 
     board->UndoMove(move);
 
@@ -307,7 +333,6 @@ MoveResult ChessBot::EvaluateRootMove(SearchParams params)
     MoveResult result{};
     result.move = params.move;
     result.eval = SearchCore(params);
-    result.mate_in_ply = params.mate_in;
     result.nodes_searched = nodes_searched.load(std::memory_order_relaxed);
     return result;
 }
@@ -322,10 +347,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
     // Checkmate / stalemate
     if (board->IsCheckMate() || board->IsStaleMate())
     {
-        // Auto-initialized to default values
-        MoveResult result{};
-
-        return result;
+        return MoveResult{};
     }
 
     nodes_searched.store(0, std::memory_order_relaxed);
@@ -336,13 +358,12 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
     std::vector<Move> moves = board->GetLegalMoves();
 
-    // Auto-initialized to default values
     MoveResult best_move{};
 
     if (moves.empty())
     {
-        // There is no legal move. There is no move to return.
-        best_move.nodes_searched = nodes_searched;
+        best_move.nodes_searched =
+            nodes_searched.load(std::memory_order_relaxed);
 
         return best_move;
     }
@@ -351,7 +372,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
     // expires before the first depth completes.
     best_move.move = moves[0];
 
-    bool maximizing = board->GetTurnColor() == TURN_WHITE;
+    const bool maximizing =
+        board->GetTurnColor() == TURN_WHITE;
 
     int best_depth = 0;
 
@@ -359,16 +381,15 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
     // Iterative deepening.
     // --------------------------------------------------------
 
-    int64_t mate_in_ply = INT64_MAX;
-
     for (int depth = min_depth;
          depth <= max_depth;
          ++depth)
     {
         const DurationMs current_time_limit = GetTimeLimit();
+
         if (current_time_limit.count() > 0 &&
             std::chrono::steady_clock::now() - search_start
-            >= current_time_limit)
+                >= current_time_limit)
         {
             break;
         }
@@ -381,68 +402,82 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         bool depth_completed = true;
 
         // ----------------------------------------------------
-        // Root moves.
+        // Root TT move.
         // ----------------------------------------------------
 
         Move tt_move{};
-        if (transposition_table->Contains(board->GetZobristHash()))
+
+        const ZobristHash root_key =
+            board->GetZobristHash();
+
+        if (transposition_table->Contains(root_key))
         {
-            const auto entry = transposition_table->GetEntry(board->GetZobristHash());
+            const auto entry =
+                transposition_table->GetEntry(root_key);
+
             if (entry.depth >= depth)
                 tt_move = entry.best_move;
         }
 
-        std::vector<int> job_ids;
-        job_ids.reserve(moves.size());
+        // ----------------------------------------------------
+        // Search root moves sequentially.
+        // ----------------------------------------------------
 
         for (int move_idx = 0;
              move_idx < static_cast<int>(moves.size());
              ++move_idx)
         {
-            const Move move = move_orderer->PickBestMove(
-                moves,
-                move_idx,
-                tt_move,
-                depth
-            );
+            // Check the time before starting another root move.
+            if (stop_requested.load(std::memory_order_relaxed))
+            {
+                depth_completed = false;
+                break;
+            }
+
+            const DurationMs time_limit = GetTimeLimit();
+
+            if (time_limit.count() > 0 &&
+                std::chrono::steady_clock::now() - search_start
+                    >= time_limit)
+            {
+                time_up = true;
+                depth_completed = false;
+                break;
+            }
+
+            const Move move =
+                move_orderer->PickBestMove(
+                    moves,
+                    move_idx,
+                    tt_move,
+                    depth
+                );
 
             SearchParams params = {
-                alpha:          static_cast<Evaluation>(INT32_MIN),
-                beta:           static_cast<Evaluation>(INT32_MAX),
-                depth:          depth,
-                ply:            0,
-                move:           move,
-                move_idx:       move_idx,
-                is_root_search: true,
-                mate_in:        INT64_MAX
+                .alpha          = static_cast<Evaluation>(INT32_MIN),
+                .beta           = static_cast<Evaluation>(INT32_MAX),
+                .depth          = depth,
+                .ply            = 0,
+                .move           = move,
+                .move_idx       = move_idx,
+                .is_root_search = true
             };
 
-            job_ids.push_back(manager.QueueJob(
-                [this](const SearchParams& job_params)
-                {
-                    auto worker_board = std::make_shared<ChessBoard>(*board);
-                    ChessBot worker(worker_board, false);
-                    worker.SetTimeLimit(GetTimeLimit());
-                    worker.search_start = search_start;
-                    worker.external_stop_requested = &stop_requested;
-                    return worker.EvaluateRootMove(job_params);
-                },
-                params
-            ));
-        }
+            // ------------------------------------------------
+            // Search this root move directly.
+            // No worker thread.
+            // No board copy.
+            // No JobManager.
+            // ------------------------------------------------
 
-        manager.WaitAllJobs();
-        const std::vector<MoveResult> results = manager.GetJobsResult(job_ids);
+            MoveResult result =
+                EvaluateRootMove(params);
 
-        for (const MoveResult& result : results)
-        {
-            nodes_searched.fetch_add(
-                result.nodes_searched,
-                std::memory_order_relaxed
-            );
-
-            if (result.mate_in_ply < mate_in_ply)
-                mate_in_ply = result.mate_in_ply;
+            if (time_up)
+            {
+                depth_completed = false;
+                break;
+            }
 
             if ((maximizing && result.eval > depth_eval) ||
                 (!maximizing && result.eval < depth_eval))
@@ -452,14 +487,22 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
             }
         }
 
-        const DurationMs depth_time_limit = GetTimeLimit();
-        if (stop_requested.load() ||
-            (depth_time_limit.count() > 0 &&
-             std::chrono::steady_clock::now() - search_start >= depth_time_limit))
-            depth_completed = false;
-
+        // ----------------------------------------------------
         // Only accept a completely searched iteration.
-        if (depth_completed && !time_up)
+        // ----------------------------------------------------
+
+        const DurationMs depth_time_limit = GetTimeLimit();
+
+        if (stop_requested.load(std::memory_order_relaxed) ||
+            time_up ||
+            (depth_time_limit.count() > 0 &&
+             std::chrono::steady_clock::now() - search_start
+                 >= depth_time_limit))
+        {
+            depth_completed = false;
+        }
+
+        if (depth_completed)
         {
             best_move = depth_move;
             best_depth = depth;
@@ -472,11 +515,30 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         }
     }
 
+    // --------------------------------------------------------
+    // Final result.
+    // --------------------------------------------------------
+
     best_move.nodes_searched =
         nodes_searched.load(std::memory_order_relaxed);
+
     best_move.depth = best_depth;
-    best_move.mate_in_ply =
-        mate_in_ply == INT64_MAX ? -2 : mate_in_ply;
+
+    // Derive mate distance from the final score.
+    if (best_move.eval >= CHECKMATE_SCORE - 10000)
+    {
+        best_move.mate_in_ply =
+            CHECKMATE_SCORE - best_move.eval;
+    }
+    else if (best_move.eval <= -CHECKMATE_SCORE + 10000)
+    {
+        best_move.mate_in_ply =
+            CHECKMATE_SCORE + best_move.eval;
+    }
+    else
+    {
+        best_move.mate_in_ply = -1;
+    }
 
     return best_move;
 }
@@ -490,8 +552,7 @@ Evaluation ChessBot::MainSearch(
     Evaluation alpha,
     Evaluation beta,
     int depth,
-    int ply,
-    int64_t& mate_in_ply
+    int ply
 )
 {
     const uint64_t current_node =
@@ -559,8 +620,6 @@ Evaluation ChessBot::MainSearch(
             //
             //     being mated as quickly as possible.
 
-            if (ply < mate_in_ply)
-                mate_in_ply = ply;
 
             if (maximizing)
             {
@@ -665,8 +724,7 @@ Evaluation ChessBot::MainSearch(
                 ply:            ply,
                 move:           move,
                 move_idx:       move_idx,
-                is_root_search: false,
-                mate_in:        mate_in_ply
+                is_root_search: false
             };
 
             Evaluation eval = SearchCore(params);
@@ -728,8 +786,7 @@ Evaluation ChessBot::MainSearch(
                 ply:            ply,
                 move:           move,
                 move_idx:       move_idx,
-                is_root_search: false,
-                mate_in:        mate_in_ply
+                is_root_search: false
             };
 
             Evaluation eval = SearchCore(params);

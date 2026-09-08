@@ -598,41 +598,39 @@ void UCI::SearchThread()
                 search_depth);
     }
 
+    std::string output;
+
+    if (result.mate_in_ply >= 0)
     {
-        std::lock_guard<std::mutex> lock(board_mutex);
-
-        std::string output;
-
-        // Output the final evaluation.
-        if (result.mate_in_ply >= 0)
-        {
-            output =
-                "info depth " +
-                std::to_string(result.depth) +
-                " score mate " +
-                std::to_string(result.mate_in_ply) +
-                "\n";
-        }
-        else
-        {
-            output =
-                "info depth " +
-                std::to_string(result.depth) +
-                " score cp " +
-                std::to_string(result.eval) +
-                "\n";
-        }
-
-        // UCI requires bestmove even if the search was stopped.
-        output +=
-            "bestmove " +
-            MoveToString(result.move) +
+        output =
+            "info depth " +
+            std::to_string(result.depth) +
+            " score mate " +
+            std::to_string(result.mate_in_ply) +
             "\n";
+    }
+    else
+    {
+        output =
+            "info depth " +
+            std::to_string(result.depth) +
+            " score cp " +
+            std::to_string(
+                static_cast<int>(
+                    std::lround(result.eval)
+                )
+            ) +
+            "\n";
+    }
 
-        {
-            std::lock_guard<std::mutex> lock(output_mutex);
-            pending_output += output;
-        }
+    output +=
+        "bestmove " +
+        MoveToString(result.move) +
+        "\n";
+
+    {
+        std::lock_guard<std::mutex> lock(output_mutex);
+        pending_output += output;
     }
 
     // Print useful debug output
@@ -645,6 +643,10 @@ void UCI::SearchThread()
         std::cerr
             << "[mate" << result.mate_in_ply << "] ";
     }
+
+    std::cerr << "UCI OUTPUT:\n"
+          << output
+          << std::flush;
 
     std::cerr
         << "[depth " << result.depth << "] "
