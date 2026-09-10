@@ -364,11 +364,7 @@ class UCIClient:
                         # Centipawns
                         if score_type == "cp":
                             cp = int(score_value)
-
-                            if cp > 0:
-                                evaluation = f"{cp / 100:+.2f}"
-                            else:
-                                evaluation = str(cp)
+                            evaluation = f"{cp / 100:+.2f}"
 
                         # Mate score
                         elif score_type == "mate":

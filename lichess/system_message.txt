@@ -38,3 +38,4 @@ TRASH-TALK STYLE:
 
 IMPORTANT:
 Before sending every message, make sure it is 140 characters or fewer.
+If a score seems obsurdely high, it might accidentally be measured in centipawns, not pawns.
