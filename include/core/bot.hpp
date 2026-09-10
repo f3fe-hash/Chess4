@@ -69,8 +69,8 @@ class ChessBot
     }
 
     Evaluation MainSearch(Evaluation alpha, Evaluation beta, int depth, int ply);
-    Evaluation SearchCore(SearchParams& params);
-    MoveResult EvaluateRootMove(SearchParams params);
+    Evaluation SearchCore(const SearchParams& params);
+    MoveResult EvaluateRootMove(const SearchParams& params);
 
     int DepthExtension(const Move& move);
 

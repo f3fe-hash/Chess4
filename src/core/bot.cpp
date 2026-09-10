@@ -213,7 +213,7 @@ int ChessBot::DepthExtension(const Move& move)
     if (board->IsCheck())
         extension += 1;
     
-    // Is it a promption?
+    // Is it a promotion?
     if (move.flags == MOVE_PROMOTION)
         extension += 1;
 
@@ -225,8 +225,15 @@ int ChessBot::DepthExtension(const Move& move)
 // SearchCore.
 // ------------------------------------------------------------
 
-Evaluation ChessBot::SearchCore(SearchParams& params)
+// LMR values
+#define LMR_LOW 1 // Low
+#define LMR_MED 1 // Medium
+#define LMR_HIG 2 // High
+#define LMR_EXT 2 // Extreme - disabled for now
+
+Evaluation ChessBot::SearchCore(const SearchParams& params)
 {
+    // Unpack the parameters.
     const Evaluation alpha      = params.alpha;
     const Evaluation beta       = params.beta;
     const int depth             = params.depth;
@@ -246,45 +253,39 @@ Evaluation ChessBot::SearchCore(SearchParams& params)
     // --------------------------------------------------------
 
     int extension = DepthExtension(move);
-
-    // LMR values
-#define LMR_LOW -0 // Low
-#define LMR_MED -1 // Medium
-#define LMR_HIG -2 // High
-#define LMR_EXT -2 // Extreme - disabled for now
+    bool endgame = evaluator.IsEndgame();
 
     // LMR
-    bool endgame = evaluator.IsEndgame();
-    if ((extension == 0) && !is_root_search && depth >= 4)
+    // Don't completely stop LMR, as searches typically occur at depth 4-5.
+    if ((extension == 0) && !is_root_search && depth >= LMR_EXT)
     {
         if (!endgame)
         {
             if (move_idx >= 120)
-                extension += LMR_EXT;
+                extension -= LMR_EXT;
             else if (move_idx >= 60)
-                extension += LMR_HIG;
+                extension -= LMR_HIG;
             else if (move_idx >= 30)
-                extension += LMR_MED;
+                extension -= LMR_MED;
             else if (move_idx >= 8)
-                extension += LMR_LOW;
+                extension -= LMR_LOW;
         }
         else
         {
             // Much more conservative LMR for endgames.
             if (move_idx >= 150)
-                extension += LMR_EXT;
+                extension -= LMR_EXT;
             else if (move_idx >= 80)
-                extension += LMR_HIG;
+                extension -= LMR_HIG;
             else if (move_idx >= 50)
-                extension += LMR_MED;
+                extension -= LMR_MED;
             else if (move_idx >= 20)
-                extension += LMR_LOW;
+                extension -= LMR_LOW;
         }
     }
 
     // Ensure depth doesn't go negative.
-    int search_depth =
-        std::max(0, depth - 1 + extension);
+    int search_depth = std::max(0, depth - 1 + extension);
 
     // We just made a move, so the child position is ply + 1.
     Evaluation eval =
@@ -297,9 +298,9 @@ Evaluation ChessBot::SearchCore(SearchParams& params)
     
     if (board->GetTurnColor() == TURN_WHITE)
     {
-        if (eval > alpha)
+        // If it is over a 50 centipawn improvement, we messed up. Redo the search at a full depth.
+        if (eval - 50 > alpha)
         {
-            // LMR was bad. It improved the eval. That was probably a good move.
             eval = MainSearch(
                 alpha,
                 beta,
@@ -310,9 +311,9 @@ Evaluation ChessBot::SearchCore(SearchParams& params)
     }
     else
     {
-        if (eval < beta)
+        // If it is over a 50 centipawn improvement, we messed up. Redo the search at a full depth.
+        if (eval + 50 < beta)
         {
-            // LMR was bad. It improved the eval. That was probably a good move.
             eval = MainSearch(
                 alpha,
                 beta,
@@ -328,7 +329,7 @@ Evaluation ChessBot::SearchCore(SearchParams& params)
 }
 
 
-MoveResult ChessBot::EvaluateRootMove(SearchParams params)
+MoveResult ChessBot::EvaluateRootMove(const SearchParams& params)
 {
     MoveResult result{};
     result.move = params.move;

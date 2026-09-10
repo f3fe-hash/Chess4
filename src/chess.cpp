@@ -120,17 +120,26 @@ Bitboard ComputeSlidingAttacks(const Square square, const Bitboard occupancy, co
     return attacks;
 }
 
-inline Bitboard NextRandom(Bitboard& state)
-{
-    state ^= state >> 12;
-    state ^= state << 25;
-    state ^= state >> 27;
-    return state * 0x2545F4914F6CDD1DULL;
-}
+//inline Bitboard NextRandom(Bitboard& state)
+//{
+//    state ^= state >> 12;
+//    state ^= state << 25;
+//    state ^= state >> 27;
+//    return state * 0x2545F4914F6CDD1DULL;
+//}
 
-inline Bitboard SparseRandom(Bitboard& state)
+inline Bitboard GetRandom(Bitboard& state)
 {
-    return NextRandom(state) & NextRandom(state) & NextRandom(state);
+    // Really doesn't matter what algorithm is used.
+
+    // Ensure state doesn't go to 0.
+    state |= 1;
+
+    state ^= state << 12;
+    state ^= state >> 27;
+    return (state & 0x2545F4914F6CDD1DULL) ^ (state | 0x2545F4914F6CDD1DULL);
+
+    //return NextRandom(state) & NextRandom(state) & NextRandom(state);
 }
 
 inline Bitboard OccupancyFromIndex(unsigned index, Bitboard mask)
@@ -169,7 +178,7 @@ Bitboard FindMagic(
 
     for (;;)
     {
-        const Bitboard magic = SparseRandom(randomState);
+        const Bitboard magic = GetRandom(randomState);
         if (std::popcount((mask * magic) & 0xFF00000000000000ULL) < 6)
             continue;
 
