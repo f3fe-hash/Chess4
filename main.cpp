@@ -29,8 +29,18 @@ int main()
 #endif
 
 #ifdef UCI_SERVER
-    std::shared_ptr<UCI> uci = std::make_shared<UCI>(board, bot1);
-    UCIServer server(uci, 8080);
+    UCIServer server(
+        []()
+        {
+            auto board = std::make_shared<ChessBoard>();
+            auto bot = std::make_shared<ChessBot>(board);
+
+            return std::make_shared<UCI>(
+                board,
+                bot);
+        },
+        8080);
+
     server.Run();
 #endif
 

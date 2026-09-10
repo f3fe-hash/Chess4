@@ -468,7 +468,7 @@ class GameWorker:
                 self.game_id,
             )
 
-        self.engine.connect()
+            self.engine.connect()
 
     def close_engine(self) -> None:
         if self.engine is not None:
