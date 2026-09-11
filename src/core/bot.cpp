@@ -1,6 +1,28 @@
 #include "core/bot.hpp"
 
 
+#ifdef DEBUG
+BotDebugData bot_debug{};
+
+void PrintBotDebug()
+{
+    std::cout << "[DEBUG] LMR re-searches: "
+        << bot_debug.lmr_research_count
+        << std::endl;
+
+    std::cout << "[DEBUG] LMR Avg. re-search depth: "
+        << std::fixed << std::setprecision(2)
+        << bot_debug.total_lmr_research_depth / bot_debug.lmr_research_count
+        << std::endl;
+}
+
+void ClearBotDebug()
+{
+    bot_debug = BotDebugData{};
+}
+#endif
+
+
 ChessBot::ChessBot(std::shared_ptr<ChessBoard> board)
     : ChessBot(board, true)
 {}
@@ -301,6 +323,11 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
         // If it is over a 50 centipawn improvement, we messed up. Redo the search at a full depth.
         if (eval - 50 > alpha)
         {
+#ifdef DEBUG_LMR_RESEARCH
+            // Debug
+            bot_debug.lmr_research_count++;
+            bot_debug.total_lmr_research_depth += depth;
+#endif
             eval = MainSearch(
                 alpha,
                 beta,
@@ -314,6 +341,11 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
         // If it is over a 50 centipawn improvement, we messed up. Redo the search at a full depth.
         if (eval + 50 < beta)
         {
+#ifdef DEBUG_LMR_RESEARCH
+            // Debug
+            bot_debug.lmr_research_count++;
+            bot_debug.total_lmr_research_depth += depth;
+#endif
             eval = MainSearch(
                 alpha,
                 beta,

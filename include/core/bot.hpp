@@ -6,10 +6,26 @@
 #include <memory>
 #include <chrono>
 #include <algorithm>
-#include <iostream>
 #include <atomic>
 
 #include <unordered_map>
+
+// DEBUG
+#ifdef DEBUG
+#include <iostream>
+
+// Tracks how many times LMR was incorrect, and a re-search was necessary.
+#define DEBUG_LMR_RESEARCH
+
+struct BotDebugData
+{
+    // DEBUG_LMR_SEARCH
+    std::uint64_t lmr_research_count = 0;
+    std::uint64_t total_lmr_research_depth = 0;
+};
+
+extern BotDebugData bot_debug;
+#endif
 
 #include "chess.hpp"
 #include "core/eval.hpp"
@@ -107,3 +123,8 @@ public:
 
     MoveResult Search(int min_depth, int max_depth);
 };
+
+#ifdef DEBUG
+void PrintBotDebug();
+void ClearBotDebug();
+#endif

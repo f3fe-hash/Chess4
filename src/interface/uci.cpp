@@ -407,31 +407,35 @@ std::string UCI::HandleGo(
     bool nodes_set = false;
     bool ponder_search = false;
 
+    // 180min
+    constexpr DurationMs INFINTE_TIME = DurationMs(180 * 60 * 60);
+
+    // 10^11 ms = 10^8 sec = 100 million seconds = about 200 weeks = about 4 years
+    constexpr DurationMs INFINITE_TIME_THRESHOLD = DurationMs(100000000000);
+
     for (size_t i = 1; i < tokens.size(); ++i)
     {
         const std::string& token = tokens[i];
+        const int tok_idx = ++i;
 
         if (token == "depth" && i + 1 < tokens.size())
         {
-            search_depth =
-                std::max(
-                    std::int64_t(1),
-                    ParseInteger(
-                        tokens[++i],
-                        100));
+            search_depth = std::max(
+                std::int64_t(1),
+                ParseInteger(tokens[tok_idx], 1)
+            );
 
             depth_set = true;
         }
         else if (token == "movetime" &&
                  i + 1 < tokens.size())
         {
-            search_time =
-                DurationMs(
-                    std::max(
-                        std::int64_t(1),
-                        ParseInteger(
-                            tokens[++i],
-                            1)));
+            search_time = DurationMs(
+                std::max(
+                    std::int64_t(1),
+                    ParseInteger(tokens[tok_idx], 1)
+                )
+            );
 
             movetime_set = true;
         }
@@ -453,13 +457,15 @@ std::string UCI::HandleGo(
         else if (token == "wtime" &&
                  i + 1 < tokens.size())
         {
-            white_time =
-                DurationMs(
-                    std::max(
-                        std::int64_t(0),
-                        ParseInteger(
-                            tokens[++i],
-                            0)));
+            if (tokens[tok_idx] == "infinite")
+                infinite_search = true;
+            
+            white_time = DurationMs(
+                std::max(
+                    std::int64_t(0),
+                    ParseInteger(tokens[tok_idx], 0)
+                )
+            );
 
             if (original_white_time.count() == 0)
                 original_white_time = white_time;
@@ -467,13 +473,15 @@ std::string UCI::HandleGo(
         else if (token == "btime" &&
                  i + 1 < tokens.size())
         {
-            black_time =
-                DurationMs(
-                    std::max(
-                        std::int64_t(0),
-                        ParseInteger(
-                            tokens[++i],
-                            0)));
+            if (tokens[tok_idx] == "infinite")
+                infinite_search = true;
+            
+            black_time = DurationMs(
+                std::max(
+                    std::int64_t(0),
+                    ParseInteger(tokens[tok_idx], 0)
+                )
+            );
 
             if (original_black_time.count() == 0)
                 original_black_time = black_time;
@@ -481,24 +489,28 @@ std::string UCI::HandleGo(
         else if (token == "winc" &&
                  i + 1 < tokens.size())
         {
-            white_increment =
-                DurationMs(
-                    std::max(
-                        std::int64_t(0),
-                        ParseInteger(
-                            tokens[++i],
-                            0)));
+            if (tokens[tok_idx] == "infinite")
+                infinite_search = true;
+
+            white_increment = DurationMs(
+                std::max(
+                    std::int64_t(0),
+                    ParseInteger(tokens[tok_idx], 0)
+                )
+            );
         }
         else if (token == "binc" &&
                  i + 1 < tokens.size())
         {
-            black_increment =
-                DurationMs(
-                    std::max(
-                        std::int64_t(0),
-                        ParseInteger(
-                            tokens[++i],
-                            0)));
+            if (tokens[tok_idx] == "infinite")
+                infinite_search = true;
+            
+            black_increment = DurationMs(
+                std::max(
+                    std::int64_t(0),
+                    ParseInteger(tokens[tok_idx], 0)
+                )
+            );
         }
         else if (token == "infinite")
         {
@@ -510,17 +522,18 @@ std::string UCI::HandleGo(
         }
     }
 
-    constexpr std::int64_t INFINITE_TIME_THRESHOLD = 100000000000LL;
-    if (white_time.count() > INFINITE_TIME_THRESHOLD)
+    // Sometimes lichess will give a massive number as the time, meaning infinite.
+    // Cap it so the bot doesn't think forever.
+    if (white_time > INFINITE_TIME_THRESHOLD)
     {
         // 30 minutes.
-        white_time = DurationMs(30 * 60 * 1000);
+        white_time = INFINTE_TIME;
     }
 
-    if (black_time.count() > INFINITE_TIME_THRESHOLD)
+    if (black_time > INFINITE_TIME_THRESHOLD)
     {
         // 30 minutes.
-        black_time = DurationMs(30 * 60 * 1000);
+        black_time = INFINTE_TIME;
     }
 
     /*
@@ -544,13 +557,7 @@ std::string UCI::HandleGo(
 
     if (infinite_search)
     {
-        /*
-         * The current ChessBot interface does not have an
-         * infinite-search API. Use the maximum duration and
-         * rely on the search's stop mechanism.
-         */
-        search_time =
-            DurationMs::max();
+        search_time = INFINTE_TIME;
     }
 
     ponder_search_time = search_time;
@@ -673,6 +680,11 @@ void UCI::SearchThread()
         << "] "
         << "[nodes " << result.nodes_searched << "]"
         << '\n';
+
+#ifdef PRINT_BOT_DEBUG
+    PrintBotDebug();
+    ClearBotDebug();
+#endif
 
     pondering.store(false);
     searching.store(false);

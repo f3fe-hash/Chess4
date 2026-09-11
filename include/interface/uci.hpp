@@ -14,6 +14,12 @@
 #include <cstdlib>
 #include <sstream>
 
+// DEBUG
+#ifdef DEBUG
+// Print the bot's debug every time a search thread is started.
+#define PRINT_BOT_DEBUG
+#endif
+
 #include "chess.hpp"
 #include "core/bot.hpp"
 

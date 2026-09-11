@@ -22,11 +22,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# All warnings,
-# extra warnings,
-# high optimization
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    # Max optimization
+    add_compile_options(-Ofast)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # Debug optimization
+    add_compile_options(-Og -g)
 
-add_compile_options(-Wall -Wextra -Ofast)
+    # Set debug flag for extra debug in program
+    add_compile_definitions(DEBUG)
+endif()
+
+# All warnings,
+# extra warnings
+
+add_compile_options(-Wall -Wextra)
 
 # Source files from src/*.cpp & src/*.c
 
