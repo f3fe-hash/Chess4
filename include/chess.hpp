@@ -7,6 +7,10 @@
 #include <string>
 #include <sstream>
 
+#ifdef DEBUG
+#include <iostream>
+#endif
+
 #include "bitboards.hpp"
 
 #define A1 0
@@ -126,6 +130,21 @@ struct Move
     int8_t flags;
     CastlingRights prev_castling_rights;
     Square prev_en_passant;
+
+    bool IsCapture() const
+    {
+        return captured != NULL_PIECE;
+    }
+
+    bool IsPromotion() const
+    {
+        return promotion != NULL_PIECE;
+    }
+
+    bool IsQuietMove() const
+    {
+        return (captured == NULL_PIECE) && (promotion == NULL_PIECE);
+    }
 
     bool operator==(const Move& other) const
     {

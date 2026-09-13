@@ -8,6 +8,11 @@ UCIServer::UCIServer(
     uci_factory(std::move(uci_factory)),
     port(port)
 {
+    std::cout
+        << "[UCI SERVER] Connected on "
+        << "127.0.0.1:"
+        << port
+        << std::endl;
 }
 
 
@@ -312,6 +317,10 @@ void UCIServer::ClientThread(
 
 void UCIServer::Run()
 {
+#ifdef DEBUG
+    std::cout << "[UCI SERVER] STATUS: UP" << std::endl;
+#endif
+    
     if (running.exchange(true))
         return;
 
@@ -338,8 +347,9 @@ void UCIServer::Run()
             if (!running)
                 break;
 
-            if (errno == EINTR)
-                continue;
+            // Why????? There is a continue on the next line.
+            //if (errno == EINTR)
+            //    continue;
 
             continue;
         }
@@ -410,6 +420,10 @@ void UCIServer::Run()
 
 void UCIServer::Stop()
 {
+#ifdef DEBUG
+    std::cout << "[UCI SERVER] STATUS: DOWN" << std::endl;
+#endif
+
     if (!running.exchange(false))
         return;
 

@@ -6,7 +6,7 @@
 #include "core/scoring.hpp"
 
 
-extern const int BUCKETS;
+inline const int BUCKETS = 65535;
 
 
 enum class TranspositionTableBound
@@ -76,7 +76,7 @@ class TranspositionTable
     };
 
     // Zobrist hash -> Transposition entry data
-    Bucket transposition_table[65535];
+    Bucket transposition_table[BUCKETS];
 
     constexpr Bucket& GetBucket(const ZobristHash& key);
     constexpr Bucket GetBucket(const ZobristHash key) const;

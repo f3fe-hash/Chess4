@@ -11,7 +11,7 @@ Evaluation MoveOrder::PieceValue(Piece piece) const
         case PIECE_TYPE_BISHOP: return GetBishopValue();
         case PIECE_TYPE_ROOK:   return GetRookValue();
         case PIECE_TYPE_QUEEN:  return GetQueenValue();
-        case PIECE_TYPE_KING:   return 1500;
+        case PIECE_TYPE_KING:   return 3200; // The queen is in the vicinety of ~2500-2700 cp.
         default:                return 0;
     }
 }
@@ -20,17 +20,28 @@ Evaluation MoveOrder::PieceValue(Piece piece) const
 Evaluation MoveOrder::MoveOrderScore(
     const Move& move,
     const Move& tt_move,
-    const int depth) const
+    const int depth,
+    const int ply) const
 {
-    constexpr Evaluation TT_MOVE_DEPTH_BONUS = 300.0;
+    // Generate the score of a move for sorting.
+    // This function uses MVV_LVA (Most Valuable Victim, Least Valuable Attacker)
+    // to generate a move-score for move sorting in quiescence and move searches.
 
     Evaluation score = 0;
+
+    // For each new depth the transposition table move is at, reward it with this much eval.
+    constexpr Evaluation TT_MOVE_DEPTH_BONUS = 1000.0;
 
     // Don't award too much evaluation to a best move in the transposition
     // table. Although it is probably accurate, award more evaluation based
     // on how deep it was searched.
     if (move == tt_move)
         score += TT_MOVE_DEPTH_BONUS * depth;
+    
+    // Killer moves get bonus
+    constexpr Evaluation KILLER_MOVE_BONUS = 10000.0;
+    if (killer_moves->IsKillerMove(move, ply))
+        score += KILLER_MOVE_BONUS;
 
     // No piece was captured.
     if (move.captured == NULL_PIECE)
@@ -39,18 +50,19 @@ Evaluation MoveOrder::MoveOrderScore(
     Evaluation victim = PieceValue(move.captured);
     Evaluation attacker = PieceValue(move.moved);
 
-    // Victim is more valuable than attacker.
-    // Setting the value higher will make it trade more pieces, while a lower
-    // value will make it choose quiet-er moves. Of course, this is just for
-    // ranking. It is not guarrenteed to choose the higher ranked moves, but
-    // it will see them earlier on.
-    score += victim * 5.4 - attacker;
+    // Victim is more valuable than attacker. This controls how much more
+    // valuable a victim is compared to an attacker in MVV-LVA ordering.
+    constexpr Evaluation VA_RATIO = 5.4;
+
+    // Calculate the MVV-LVA (Most Valuable Victim, Least Valuable Attacker)
+    // ie. Prefer capturing a queen with a pawn over a pawn with a queen.
+    score += victim * VA_RATIO - attacker;
 
     return score;
 }
 
 
-void MoveOrder::OrderMoves(std::vector<Move>& moves, int depth) const
+void MoveOrder::OrderMoves(std::vector<Move>& moves, const int depth, const int ply) const
 {
     Move tt_move{};
 
@@ -76,7 +88,7 @@ void MoveOrder::OrderMoves(std::vector<Move>& moves, int depth) const
     for (const Move& move : moves)
     {
         scored.push_back({
-            MoveOrderScore(move, tt_move, depth),
+            MoveOrderScore(move, tt_move, depth, ply),
             move
         });
     }
@@ -98,14 +110,15 @@ Move MoveOrder::PickBestMove(
     std::vector<Move>& moves,
     const int start,
     const Move& tt_move,
-    const int depth) const
+    const int depth,
+    const int ply) const
 {
     int best = start;
-    Evaluation best_score = MoveOrderScore(moves[start], tt_move, depth);
+    Evaluation best_score = MoveOrderScore(moves[start], tt_move, depth, ply);
 
     for (int i = start + 1; i < static_cast<int>(moves.size()); ++i)
     {
-        Evaluation score = MoveOrderScore(moves[i], tt_move, depth);
+        Evaluation score = MoveOrderScore(moves[i], tt_move, depth, ply);
 
         if (score > best_score)
         {

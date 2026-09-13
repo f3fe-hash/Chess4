@@ -625,6 +625,7 @@ void UCI::SearchThread()
 
     if (result.mate_in_ply >= 0)
     {
+        // mate score
         output =
             "info depth " +
             std::to_string(result.depth) +
@@ -634,6 +635,7 @@ void UCI::SearchThread()
     }
     else
     {
+        // centipawn score
         output =
             "info depth " +
             std::to_string(result.depth) +
@@ -658,26 +660,25 @@ void UCI::SearchThread()
 
     // Print useful debug output
     std::cerr
-        << "[move " << MoveToString(result.move) << "] ";
+        << "[UCI] [move " << MoveToString(result.move)
+        << "] " << std::endl;
 
     // If a mate was found, print it.
     if (result.mate_in_ply >= 0)
     {
         std::cerr
-            << "[mate" << result.mate_in_ply << "] ";
+            << "[UCI] [depth " << result.depth << "] "
+            << "[mate" << result.mate_in_ply << "] "
+            << "[nodes " << result.nodes_searched << "]"
+            << '\n';;
     }
 
-    std::cerr << "UCI OUTPUT:\n"
-          << output
-          << std::flush;
-
     std::cerr
-        << "[depth " << result.depth << "] "
+        << "[UCI] [depth " << result.depth << "] "
         << "[evaluation "
         << std::fixed
         << std::setprecision(2)
-        << result.eval / 100
-        << "] "
+        << result.eval / 100 << "] "
         << "[nodes " << result.nodes_searched << "]"
         << '\n';
 

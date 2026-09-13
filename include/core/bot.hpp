@@ -22,16 +22,23 @@ struct BotDebugData
     // DEBUG_LMR_SEARCH
     std::uint64_t lmr_research_count = 0;
     std::uint64_t total_lmr_research_depth = 0;
+
+    // Always here
+    std::uint64_t nodes_searched = 0;
 };
 
 extern BotDebugData bot_debug;
 #endif
 
+// Orders moves at once, instead of using PickBestMove
+#define ORDER_MOVES
+
 #include "chess.hpp"
 #include "core/eval.hpp"
-#include "core/transposition_table.hpp"
 #include "core/scoring.hpp"
-#include "core/multithread.hpp"
+#include "core/transposition_table.hpp"
+#include "core/killer_table.hpp"
+#include "core/threads/multithread.hpp"
 
 
 struct MoveResult
@@ -73,6 +80,7 @@ class ChessBot
     std::atomic<bool>* external_stop_requested = nullptr;
 
     std::shared_ptr<TranspositionTable> transposition_table;
+    std::shared_ptr<KillerMoves> killer_moves;
 
     // MultiThreadManager
     MultiThreadManager<MoveResult, SearchParams> manager;

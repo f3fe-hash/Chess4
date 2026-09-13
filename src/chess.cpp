@@ -120,26 +120,22 @@ Bitboard ComputeSlidingAttacks(const Square square, const Bitboard occupancy, co
     return attacks;
 }
 
-//inline Bitboard NextRandom(Bitboard& state)
-//{
-//    state ^= state >> 12;
-//    state ^= state << 25;
-//    state ^= state >> 27;
-//    return state * 0x2545F4914F6CDD1DULL;
-//}
+inline Bitboard NextRandom(Bitboard& state)
+{
+    state ^= state >> 12;
+    state ^= state << 25;
+    state ^= state >> 27;
+    return state * 0x2545F4914F6CDD1DULL;
+}
 
 inline Bitboard GetRandom(Bitboard& state)
 {
-    // Really doesn't matter what algorithm is used.
+    //state ^= state << 12;
+    //state ^= state >> 27;
+    //state ^= state << 22;
+    //return (state & 0x2545F4914F6CDD1DULL);
 
-    // Ensure state doesn't go to 0.
-    state |= 1;
-
-    state ^= state << 12;
-    state ^= state >> 27;
-    return (state & 0x2545F4914F6CDD1DULL) ^ (state | 0x2545F4914F6CDD1DULL);
-
-    //return NextRandom(state) & NextRandom(state) & NextRandom(state);
+    return NextRandom(state) & NextRandom(state) & NextRandom(state);
 }
 
 inline Bitboard OccupancyFromIndex(unsigned index, Bitboard mask)
@@ -671,9 +667,19 @@ void ChessBoard::ComputeAttackLookupBitboards()
         const unsigned rookBits = std::popcount(rook_masks[square]);
         bishop_magic_shifts[square] = 64 - bishopBits;
         rook_magic_shifts[square] = 64 - rookBits;
+
+#ifdef DEBUG
+        std::cout << "[CHESS BOARD] Computing magic numbers for bishops (sq. " << (int)square << ")..." << std::endl;
+#endif
+
         bishop_magics[square] = FindMagic(
             square, bishop_masks[square], bishopDirs, 4,
             bishopBits, randomState);
+      
+#ifdef DEBUG
+        std::cout << "[CHESS BOARD] Computing magic numbers for rooks   (sq. " << (int)square << ")..." << std::endl;
+#endif
+
         rook_magics[square] = FindMagic(
             square, rook_masks[square], rookDirs, 4,
             rookBits, randomState);

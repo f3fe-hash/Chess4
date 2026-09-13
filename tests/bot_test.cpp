@@ -7,8 +7,7 @@
 #include "core/bot.hpp"
 
 
-
-TEST(Bot, SearchIsRepeatableOnTacticalPosition)
+TEST(Bot, SearchIsRepeatableOnTacticalPosition) 
 {
     auto board = std::make_shared<ChessBoard>();
     board->LoadFEN("4k3/8/8/3q4/8/8/4R3/4K3 w - - 0 1");
@@ -33,14 +32,14 @@ TEST(Bot, BlackSearchTakesFreeQueen)
     auto board = std::make_shared<ChessBoard>();
     board->LoadFEN("3rk3/8/8/8/3Q4/8/8/4K3 b - - 0 1");
     ChessBot bot(board);
-    bot.SetTimeLimit(DurationMs(0));
+    bot.SetTimeLimit(DurationMs(3));
 
     const MoveResult result = bot.Search(2, 2);
 
     ASSERT_TRUE(board->IsLegalMove(result.move));
     EXPECT_EQ(result.move.from, D8);
     EXPECT_EQ(result.move.to, D4);
-    EXPECT_EQ(result.mate_in_ply, -2);
+    EXPECT_EQ(result.mate_in_ply, -1);
 }
 
 

@@ -22,6 +22,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# Set the default build type to Release for optimization
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+# Optimizations
+
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     # Max optimization
     add_compile_options(-Ofast)
@@ -58,40 +66,25 @@ find_package(Curses REQUIRED)
 # PGO
 # ====================
 
-# ---
-# cmake -DCMAKE_BUILD_TYPE=Release -DPGO_MODE=GENERATE ..
-# cmake --build .
-# ---
-# ./Chess
-# ---
-# cmake -DPGO_MODE=USE ..
-# cmake --build . --target clean
-# cmake --build .
-# ---
-
-# Set the default build type to Release for optimization
-
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
-endif()
-
-# Define a PGO_MODE variable that can be: OFF, GENERATE, or USE
-
 set(PGO_MODE "OFF" CACHE STRING "PGO build phase: OFF, GENERATE, or USE")
 set_property(CACHE PGO_MODE PROPERTY STRINGS "OFF" "GENERATE" "USE")
 
-# Configure profile path (defaults to the build directory)
-
 set(PGO_PROFILE_DIR "${CMAKE_BINARY_DIR}/pgo_data")
-
-# Apply GCC flags based on the PGO phase
 
 if(PGO_MODE STREQUAL "GENERATE")
 
     message(STATUS "PGO Mode: Generating profile instrumentation...")
 
-    add_compile_options(-fprofile-generate=${PGO_PROFILE_DIR})
-    add_link_options(-fprofile-generate=${PGO_PROFILE_DIR})
+    # PGO generation uses the automated self-play workload.
+    add_compile_definitions(PGO_TEST)
+
+    add_compile_options(
+        -fprofile-generate=${PGO_PROFILE_DIR}
+    )
+
+    add_link_options(
+        -fprofile-generate=${PGO_PROFILE_DIR}
+    )
 
 elseif(PGO_MODE STREQUAL "USE")
 
@@ -100,13 +93,12 @@ elseif(PGO_MODE STREQUAL "USE")
     add_compile_options(
         -fprofile-use=${PGO_PROFILE_DIR}
         -fprofile-correction
+        -Wno-error=coverage-mismatch
     )
 
-    add_link_options(-fprofile-use=${PGO_PROFILE_DIR})
-
-    # Optional: Treat profile mismatches as warnings rather than hard errors
-
-    add_compile_options(-Wno-error=coverage-mismatch)
+    add_link_options(
+        -fprofile-use=${PGO_PROFILE_DIR}
+    )
 
 endif()
 
@@ -132,7 +124,9 @@ add_executable(${PROJECT_NAME} main.cpp)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE chess)
 
-if(CHESS_UCI_SERVER)
+if(PGO_MODE STREQUAL "GENERATE")
+    target_compile_definitions(${PROJECT_NAME} PRIVATE PGO_TEST)
+elseif(CHESS_UCI_SERVER)
     target_compile_definitions(${PROJECT_NAME} PRIVATE UCI_SERVER)
 else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE MATCH_TEST)

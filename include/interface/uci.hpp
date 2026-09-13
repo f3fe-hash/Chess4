@@ -13,6 +13,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <sstream>
+#include <iostream>
 
 // DEBUG
 #ifdef DEBUG

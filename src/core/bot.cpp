@@ -12,7 +12,12 @@ void PrintBotDebug()
 
     std::cout << "[DEBUG] LMR Avg. re-search depth: "
         << std::fixed << std::setprecision(2)
-        << bot_debug.total_lmr_research_depth / bot_debug.lmr_research_count
+        << (float)bot_debug.total_lmr_research_depth / (float)bot_debug.lmr_research_count
+        << std::endl;
+
+    std::cout << "[DEBUG] average % of moves re-searched: "
+        << std::fixed << std::setprecision(2)
+        << ((float)bot_debug.lmr_research_count / (float)bot_debug.nodes_searched) * 100
         << std::endl;
 }
 
@@ -32,7 +37,8 @@ ChessBot::ChessBot(std::shared_ptr<ChessBoard> board, bool start_manager)
     : board(board), manager(start_manager)
 {
     transposition_table = std::make_shared<TranspositionTable>();
-    move_orderer = std::make_shared<MoveOrder>(transposition_table, board);
+    killer_moves = std::make_shared<KillerMoves>();
+    move_orderer = std::make_shared<MoveOrder>(transposition_table, killer_moves, board);
 
     evaluator = ChessBoardEvaluator(board, transposition_table, move_orderer);
 }
@@ -236,7 +242,7 @@ int ChessBot::DepthExtension(const Move& move)
         extension += 1;
     
     // Is it a promotion?
-    if (move.flags == MOVE_PROMOTION)
+    if (move.IsPromotion())
         extension += 1;
 
     return extension;
@@ -249,9 +255,9 @@ int ChessBot::DepthExtension(const Move& move)
 
 // LMR values
 #define LMR_LOW 1 // Low
-#define LMR_MED 1 // Medium
-#define LMR_HIG 2 // High
-#define LMR_EXT 2 // Extreme - disabled for now
+#define LMR_MED 2 // Medium
+#define LMR_HIG 3 // High
+#define LMR_EXT 4 // Extreme
 
 Evaluation ChessBot::SearchCore(const SearchParams& params)
 {
@@ -277,9 +283,23 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
     int extension = DepthExtension(move);
     bool endgame = evaluator.IsEndgame();
 
+    bool is_tt_move = false;
+    const ZobristHash key = board->GetZobristHash();
+    if (transposition_table->Contains(key))
+    {
+        if (transposition_table->GetEntry(key).best_move == move)
+            is_tt_move = true;
+    }
+
     // LMR
-    // Don't completely stop LMR, as searches typically occur at depth 4-5.
-    if ((extension == 0) && !is_root_search && depth >= LMR_EXT)
+    if (
+        (extension == 0) &&
+        (depth >= 3) &&
+        move.IsQuietMove() && 
+        !is_root_search &&
+        !killer_moves->IsKillerMove(move, ply) &&
+        !is_tt_move
+    )
     {
         if (!endgame)
         {
@@ -318,41 +338,27 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
             ply + 1
         );
     
-    if (board->GetTurnColor() == TURN_WHITE)
+    constexpr Evaluation LMR_RESEARCH_MARGIN = 10;
+
+    // If it is over a `LMR_RESEARCH_MARGIN` centipawn improvement, we messed up. Redo the search at a full depth.
+    // Turn color is flipped, because we made a move.
+    const bool research = board->GetTurnColor() == TURN_BLACK ?
+        eval > alpha + LMR_RESEARCH_MARGIN :
+        eval < beta - LMR_RESEARCH_MARGIN;
+    
+    if (research)
     {
-        // If it is over a 50 centipawn improvement, we messed up. Redo the search at a full depth.
-        if (eval - 50 > alpha)
-        {
 #ifdef DEBUG_LMR_RESEARCH
-            // Debug
-            bot_debug.lmr_research_count++;
-            bot_debug.total_lmr_research_depth += depth;
+        // Debug
+        bot_debug.lmr_research_count++;
+        bot_debug.total_lmr_research_depth += depth;
 #endif
-            eval = MainSearch(
-                alpha,
-                beta,
-                depth - 1,
-                ply + 1
-            );
-        }
-    }
-    else
-    {
-        // If it is over a 50 centipawn improvement, we messed up. Redo the search at a full depth.
-        if (eval + 50 < beta)
-        {
-#ifdef DEBUG_LMR_RESEARCH
-            // Debug
-            bot_debug.lmr_research_count++;
-            bot_debug.total_lmr_research_depth += depth;
-#endif
-            eval = MainSearch(
-                alpha,
-                beta,
-                depth - 1,
-                ply + 1
-            );
-        }
+        eval = MainSearch(
+            alpha,
+            beta,
+            depth - 1,
+            ply + 1
+        );
     }
 
     board->UndoMove(move);
@@ -451,6 +457,10 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
             if (entry.depth >= depth)
                 tt_move = entry.best_move;
         }
+    
+#ifdef ORDER_MOVES
+        move_orderer->OrderMoves(moves, 0, 0);
+#endif
 
         // ----------------------------------------------------
         // Search root moves sequentially.
@@ -478,6 +488,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                 break;
             }
 
+#ifndef ORDER_MOVES
             const Move move =
                 move_orderer->PickBestMove(
                     moves,
@@ -485,6 +496,10 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                     tt_move,
                     depth
                 );
+#else
+            // Moves are already sorted.
+            const Move move = moves[move_idx];
+#endif
 
             SearchParams params = {
                 .alpha          = static_cast<Evaluation>(INT32_MIN),
@@ -588,6 +603,10 @@ Evaluation ChessBot::MainSearch(
     int ply
 )
 {
+#ifdef DEBUG
+    bot_debug.nodes_searched++;
+#endif
+
     const uint64_t current_node =
         nodes_searched.fetch_add(1, std::memory_order_relaxed) + 1;
 
@@ -729,6 +748,8 @@ Evaluation ChessBot::MainSearch(
             tt_move = entry.best_move;
     }
 
+    move_orderer->OrderMoves(moves, depth, ply);
+
     Evaluation best_eval;
 
     // --------------------------------------------------------
@@ -743,12 +764,17 @@ Evaluation ChessBot::MainSearch(
              move_idx < static_cast<int>(moves.size());
              ++move_idx)
         {
+#ifndef ORDER_MOVES
             Move move = move_orderer->PickBestMove(
                 moves,
                 move_idx,
                 tt_move,
                 depth
             );
+#else
+            // Moves are already sorted.
+            Move move = moves[move_idx];
+#endif
 
             SearchParams params = {
                 alpha:          alpha,
@@ -788,6 +814,9 @@ Evaluation ChessBot::MainSearch(
                     static_cast<uint8_t>(depth)
                 );
 
+                if (move.IsQuietMove())
+                    killer_moves->AddKillerMove(move, ply);
+
                 return best_eval;
             }
         }
@@ -805,12 +834,17 @@ Evaluation ChessBot::MainSearch(
              move_idx < static_cast<int>(moves.size());
              ++move_idx)
         {
+#ifndef ORDER_MOVES
             Move move = move_orderer->PickBestMove(
                 moves,
                 move_idx,
                 tt_move,
                 depth
             );
+#else
+            // Moves are already sorted.
+            Move move = moves[move_idx];
+#endif
 
             SearchParams params = {
                 alpha:          alpha,
@@ -849,6 +883,9 @@ Evaluation ChessBot::MainSearch(
                     stored_eval,
                     static_cast<uint8_t>(depth)
                 );
+
+                if (move.IsQuietMove())
+                    killer_moves->AddKillerMove(move, ply);
 
                 return best_eval;
             }

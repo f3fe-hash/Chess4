@@ -1,9 +1,6 @@
 #include "core/transposition_table.hpp"
 
 
-const int BUCKETS = 65535;
-
-
 constexpr TranspositionTable::Bucket& TranspositionTable::GetBucket(const ZobristHash& key)
 {
     const uint64_t bucket_idx = key % BUCKETS;
