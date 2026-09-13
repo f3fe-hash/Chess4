@@ -86,6 +86,10 @@ MAX_MOVE_TIME_MS: Optional[int] = None
 # Retry delay for transient errors.
 RECONNECT_DELAY_SECONDS = 5
 
+# Games that have not had a move for this long are considered stale.
+# 24 hours (1 day)
+STALE_GAME_SECONDS = 24 * 60 * 60
+
 
 # ============================================================
 # Logging
@@ -186,6 +190,13 @@ class LichessAPI:
     def make_move(self, game_id: str, move: str) -> None:
         response = self.session.post(
             f"{LICHESS_API}/api/bot/game/{game_id}/move/{move}",
+            timeout=30,
+        )
+        response.raise_for_status()
+
+    def abort_game(self, game_id: str) -> None:
+        response = self.session.post(
+            f"{LICHESS_API}/api/bot/game/{game_id}/abort",
             timeout=30,
         )
         response.raise_for_status()
@@ -701,6 +712,10 @@ class BotManager:
         self.api = api
         self.bot_id = bot_id
 
+        # Ignore games that existed before this process started.
+        # Lichess reports createdAt in milliseconds since Unix epoch.
+        self.start_time_ms = int(time.time() * 1000)
+
         self.executor = ThreadPoolExecutor(
             max_workers=MAX_GAMES,
             thread_name_prefix="lichess-game",
@@ -713,7 +728,47 @@ class BotManager:
         with self.games_lock:
             return len(self.games)
 
-    def start_game(self, game_id: str) -> None:
+    def start_game(self, game: dict) -> None:
+        game_id = game.get("id")
+
+        if not game_id:
+            return
+
+        # Lichess reports lastMoveAt in milliseconds since Unix epoch.
+        last_move_at = game.get("lastMoveAt")
+
+        if last_move_at is not None:
+            try:
+                last_move_time = int(last_move_at) / 1000.0
+                age = time.time() - last_move_time
+
+                if age > STALE_GAME_SECONDS:
+                    log(
+                        f"[{game_id}] Game has been inactive for "
+                        f"{age / 86400:.1f} days; aborting"
+                    )
+
+                    try:
+                        self.api.abort_game(game_id)
+                        log(
+                            f"[{game_id}] Stale game aborted"
+                        )
+                    except Exception as exc:
+                        log_error(
+                            f"[{game_id}] Could not abort stale game: "
+                            f"{exc}"
+                        )
+
+                    return
+
+            except (TypeError, ValueError):
+                log_error(
+                    f"[{game_id}] Invalid lastMoveAt: "
+                    f"{last_move_at!r}"
+                )
+
+        # If lastMoveAt is missing, don't automatically assume the game
+        # is stale. Let the game worker inspect the game normally.
         with self.games_lock:
             if game_id in self.games:
                 log(
@@ -902,7 +957,7 @@ def main() -> None:
                             f"active)"
                         )
 
-                        manager.start_game(game_id)
+                        manager.start_game(game)
 
             except requests.HTTPError as exc:
                 log_error(

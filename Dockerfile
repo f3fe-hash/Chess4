@@ -12,7 +12,7 @@ WORKDIR /src
 COPY . .
 
 # ============================================================
-# PGO generation build
+# PGO generation
 # ============================================================
 
 RUN cmake -S . -B /build \
@@ -22,14 +22,8 @@ RUN cmake -S . -B /build \
         -DPGO_MODE=GENERATE \
     && cmake --build /build --target Chess --parallel
 
-# Run the match test to generate PGO profile data.
-#
-# This executable is built with MATCH_TEST because
-# CHESS_UCI_SERVER=OFF.
-#
-# The generated profile data is stored in:
-# /build/pgo_data
-#
+# This is cached as long as the source/build configuration
+# above has not changed.
 RUN /build/Chess
 
 # ============================================================
@@ -44,7 +38,7 @@ RUN cmake -S . -B /build \
     && cmake --build /build --target Chess --parallel
 
 # ============================================================
-# Runtime image
+# Runtime
 # ============================================================
 
 FROM gcc:15-bookworm
@@ -64,7 +58,6 @@ RUN apt-get update \
     && python3 -m pip install --break-system-packages --no-cache-dir -r requirements.txt
 
 COPY --from=engine-builder /build/Chess ./Chess
-
 COPY lichess ./lichess
 
 EXPOSE 8080

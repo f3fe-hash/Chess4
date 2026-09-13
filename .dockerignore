@@ -4,3 +4,10 @@ build/
 perf/*.data
 perf/out.*
 **/__pycache__/
+pgo_data/
+.gitignore
+*.gcda
+*.gcno
+*.gcov
+CMakeCache.txt
+CMakeFiles/
