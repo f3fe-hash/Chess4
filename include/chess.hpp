@@ -146,6 +146,11 @@ struct Move
         return (captured == NULL_PIECE) && (promotion == NULL_PIECE);
     }
 
+    bool IsNull() const
+    {
+        return from == NULL_PIECE;
+    }
+
     bool operator==(const Move& other) const
     {
         return from == other.from &&

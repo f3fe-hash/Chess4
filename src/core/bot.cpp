@@ -329,7 +329,6 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
     // Ensure depth doesn't go negative.
     int search_depth = std::max(0, depth - 1 + extension);
 
-    // We just made a move, so the child position is ply + 1.
     Evaluation eval =
         MainSearch(
             alpha,
@@ -337,22 +336,49 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
             search_depth,
             ply + 1
         );
-    
+
+    // The search was interrupted. Do NOT attempt an LMR re-search.
+    if (time_up)
+    {
+        board->UndoMove(move);
+        return 0;
+    }
+
     constexpr Evaluation LMR_RESEARCH_MARGIN = 10;
 
-    // If it is over a `LMR_RESEARCH_MARGIN` centipawn improvement, we messed up. Redo the search at a full depth.
-    // Turn color is flipped, because we made a move.
-    const bool research = board->GetTurnColor() == TURN_BLACK ?
-        eval > alpha + LMR_RESEARCH_MARGIN :
-        eval < beta - LMR_RESEARCH_MARGIN;
-    
+    const bool was_reduced =
+        search_depth < depth - 1;
+
+    bool research = false;
+
+    if (was_reduced)
+    {
+        // After making the move, the side to move is the opponent.
+        //
+        // If Black is to move, the parent was maximizing.
+        // The move needs a re-search if it appears to improve alpha.
+        //
+        // If White is to move, the parent was minimizing.
+        // The move needs a re-search if it appears to improve
+        // (lower) beta.
+
+        if (board->GetTurnColor() == TURN_BLACK)
+        {
+            research = eval > alpha + LMR_RESEARCH_MARGIN;
+        }
+        else
+        {
+            research = eval < beta - LMR_RESEARCH_MARGIN;
+        }
+    }
+
     if (research)
     {
-#ifdef DEBUG_LMR_RESEARCH
-        // Debug
+    #ifdef DEBUG_LMR_RESEARCH
         bot_debug.lmr_research_count++;
         bot_debug.total_lmr_research_depth += depth;
-#endif
+    #endif
+
         eval = MainSearch(
             alpha,
             beta,
@@ -706,7 +732,7 @@ Evaluation ChessBot::MainSearch(
 
     if (transposition_table->Contains(key))
     {
-        const TranspositionTableEntry& entry = transposition_table->GetEntry(key);
+        const TranspositionTableEntry entry = transposition_table->GetEntry(key);
 
         if (entry.depth >= depth)
         {
@@ -751,6 +777,7 @@ Evaluation ChessBot::MainSearch(
     move_orderer->OrderMoves(moves, depth, ply);
 
     Evaluation best_eval;
+    Move best_move;
 
     // --------------------------------------------------------
     // Maximizing node.
@@ -794,7 +821,7 @@ Evaluation ChessBot::MainSearch(
             if (eval > best_eval)
             {
                 best_eval = eval;
-                transposition_table->SetBestMove(key, move, depth);
+                best_move = move;
             }
             
             alpha = std::max(alpha, eval);
@@ -864,7 +891,7 @@ Evaluation ChessBot::MainSearch(
             if (eval < best_eval)
             {
                 best_eval = eval;
-                transposition_table->SetBestMove(key, move, depth);
+                best_move = move;
             }
 
             beta = std::min(beta, eval);
@@ -904,6 +931,11 @@ Evaluation ChessBot::MainSearch(
         stored_eval,
         static_cast<uint8_t>(depth)
     );
+
+    if (!best_move.IsNull())
+    {
+        transposition_table->SetBestMove(key, best_move, depth);
+    }
 
     return best_eval;
 }

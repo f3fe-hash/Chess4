@@ -60,13 +60,22 @@ void TranspositionTable::Store(
         return;
     }
 
-    // Prefer retaining deeper searches when a bucket collides.
     int replacement_idx = 0;
-    for (int entry_idx = 1; entry_idx < bucket.n_entries; ++entry_idx)
+
+    for (int entry_idx = 1;
+        entry_idx < bucket.n_entries;
+        ++entry_idx)
     {
         if (bucket.entries[entry_idx].entry.depth <
             bucket.entries[replacement_idx].entry.depth)
+        {
             replacement_idx = entry_idx;
+        }
+    }
+
+    if (entry.depth < bucket.entries[replacement_idx].entry.depth)
+    {
+        return;
     }
 
     bucket.entries[replacement_idx] = stored_entry;
@@ -144,10 +153,7 @@ void TranspositionTable::SetBestMove(
     }
 
     entry.best_move = move;
-
-    // Only update depth if this is a deeper entry.
-    if (entry.depth < depth)
-        entry.depth = static_cast<uint8_t>(depth);
+    entry.depth = static_cast<uint8_t>(depth);
 
     Store(key, entry);
 }
@@ -165,9 +171,15 @@ void TranspositionTable::SetBound(
     {
         entry = Get(key);
 
-        // Don't replace a deeper entry with a shallower one.
         if (entry.depth > depth)
             return;
+
+        if (entry.depth == depth &&
+            entry.bound == TranspositionTableBound::EXACT &&
+            bound != TranspositionTableBound::EXACT)
+        {
+            return;
+        }
     }
 
     entry.eval = eval;

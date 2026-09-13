@@ -47,7 +47,7 @@ endif()
 # All warnings,
 # extra warnings
 
-add_compile_options(-Wall -Wextra -Wno-dev)
+add_compile_options(-Wall -Wextra)
 
 # Source files from src/*.cpp & src/*.c
 
@@ -73,33 +73,47 @@ set_property(CACHE PGO_MODE PROPERTY STRINGS "OFF" "GENERATE" "USE")
 
 set(PGO_PROFILE_DIR "${CMAKE_BINARY_DIR}/pgo_data")
 
+# All source files under src/, except src/interface/.
+file(GLOB_RECURSE PGO_SOURCES
+    CONFIGURE_DEPENDS
+    src/*.cpp
+    src/*.c
+)
+
+list(FILTER PGO_SOURCES EXCLUDE REGEX
+    ".*/src/interface/.*"
+)
+
 if(PGO_MODE STREQUAL "GENERATE")
 
     message(STATUS "PGO Mode: Generating profile instrumentation...")
 
-    # PGO generation uses the automated self-play workload.
-    add_compile_definitions(PGO_TEST)
-
-    add_compile_options(
-        -fprofile-generate=${PGO_PROFILE_DIR}
-    )
-
-    add_link_options(
-        -fprofile-generate=${PGO_PROFILE_DIR}
-    )
+    foreach(PGO_SOURCE IN LISTS PGO_SOURCES)
+        set_property(
+            SOURCE "${PGO_SOURCE}"
+            APPEND PROPERTY COMPILE_OPTIONS
+            "-fprofile-generate=${PGO_PROFILE_DIR}"
+        )
+    endforeach()
 
 elseif(PGO_MODE STREQUAL "USE")
 
     message(STATUS "PGO Mode: Applying profile data for optimization...")
 
-    add_compile_options(
-        -fprofile-use=${PGO_PROFILE_DIR}
-        -fprofile-correction
-        -Wno-error=coverage-mismatch
-    )
+    foreach(PGO_SOURCE IN LISTS PGO_SOURCES)
+        set_property(
+            SOURCE "${PGO_SOURCE}"
+            APPEND PROPERTY COMPILE_OPTIONS
+            "-fprofile-use=${PGO_PROFILE_DIR}"
+            "-fprofile-correction"
+        )
+    endforeach()
 
-    add_link_options(
-        -fprofile-use=${PGO_PROFILE_DIR}
+elseif(NOT PGO_MODE STREQUAL "OFF")
+
+    message(FATAL_ERROR
+        "Invalid PGO_MODE='${PGO_MODE}'. "
+        "Expected OFF, GENERATE, or USE."
     )
 
 endif()
@@ -123,6 +137,16 @@ target_link_libraries(chess PRIVATE ${CURSES_LIBRARIES})
 # ====================
 
 add_executable(${PROJECT_NAME} main.cpp)
+
+if(PGO_MODE STREQUAL "GENERATE")
+    target_link_options(${PROJECT_NAME} PRIVATE
+        "-fprofile-generate=${PGO_PROFILE_DIR}"
+    )
+elseif(PGO_MODE STREQUAL "USE")
+    target_link_options(${PROJECT_NAME} PRIVATE
+        "-fprofile-use=${PGO_PROFILE_DIR}"
+    )
+endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE chess)
 
