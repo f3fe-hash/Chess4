@@ -267,6 +267,17 @@ class ChessBoard
         return base + (type - 1);
     }
 
+    constexpr uint64_t GetEnPassantZobristKey(
+        const Square en_passant)
+    {
+        if (en_passant == 64)
+            return 0;
+
+        return zobrist_keys.en_passant[
+            get_piece_x(en_passant)
+        ];
+    }
+
     size_t GetNumMoves() const;
     size_t GetNumCaptures() const;
     
