@@ -80,96 +80,167 @@ const
         white_to_move ? winc : binc;
 
     const int64_t time = current_time.count();
+    const int64_t opp_time = opponent_time.count();
+    const int64_t inc = increment.count();
 
     if (time <= 0)
         return DurationMs(1);
 
     // --------------------------------------------------------
-    // Base time allocation
+    // Emergency time management.
     //
-    // 15 minutes remaining -> ~10 seconds
-    // 10 minutes remaining -> ~7 seconds
-    //  5 minutes remaining -> ~5 seconds
-    //  1 minute remaining  -> ~2 seconds
+    // Never spend a large fraction of the remaining clock
+    // when we're already low.
     // --------------------------------------------------------
 
-    double time_fraction;
+    int64_t think_time;
 
-    if (time > 10 * 60 * 1000)
+    if (time <= 5000)
     {
-        // Lots of time.
-        time_fraction = 1.0 / 90.0;
+        // 5 seconds or less:
+        // Play extremely quickly.
+        think_time = time / 5;
     }
-    else if (time > 5 * 60 * 1000)
+    else if (time <= 10000)
     {
-        time_fraction = 1.0 / 75.0;
+        // 5-10 seconds.
+        think_time = time / 6;
     }
-    else if (time > 2 * 60 * 1000)
+    else if (time <= 30000)
     {
-        time_fraction = 1.0 / 60.0;
+        // 10-30 seconds.
+        think_time = time / 8;
+    }
+    else if (time <= 60000)
+    {
+        // 30-60 seconds.
+        think_time = time / 12;
+    }
+    else if (time <= 2 * 60 * 1000)
+    {
+        // 1-2 minutes.
+        think_time = time / 20;
+    }
+    else if (time <= 5 * 60 * 1000)
+    {
+        // 2-5 minutes.
+        think_time = time / 35;
+    }
+    else if (time <= 10 * 60 * 1000)
+    {
+        // 5-10 minutes.
+        think_time = time / 60;
     }
     else
     {
-        time_fraction = 1.0 / 45.0;
+        // 10+ minutes.
+        think_time = time / 75;
     }
 
-    int64_t think_time =
-        static_cast<int64_t>(time * time_fraction);
-
     // --------------------------------------------------------
-    // Adjust based on opponent's remaining time.
+    // Increment.
+    //
+    // Only use part of the increment. This is particularly
+    // useful in short time controls.
     // --------------------------------------------------------
 
-    if (opponent_time.count() > 0)
+    if (inc > 0)
     {
-        const double clock_ratio =
-            static_cast<double>(time) /
-            static_cast<double>(opponent_time.count());
+        constexpr double INCREMENT_FRACTION = 0.35;
 
-        if (clock_ratio < 0.5)
+        think_time += static_cast<int64_t>(
+            inc * INCREMENT_FRACTION
+        );
+    }
+
+    // --------------------------------------------------------
+    // Time-ratio adjustment.
+    //
+    // If we're significantly behind, speed up.
+    // If we're significantly ahead, we can afford to think
+    // somewhat longer.
+    // --------------------------------------------------------
+
+    if (opp_time > 0)
+    {
+        const double ratio =
+            static_cast<double>(time) /
+            static_cast<double>(opp_time);
+
+        if (ratio < 0.5)
         {
-            // We're badly behind on time.
             think_time = static_cast<int64_t>(
-                think_time * 0.75
+                think_time * 0.70
             );
         }
-        else if (clock_ratio > 2.0)
+        else if (ratio < 0.75)
         {
-            // We have substantially more time.
             think_time = static_cast<int64_t>(
-                think_time * 1.25
+                think_time * 0.85
+            );
+        }
+        else if (ratio > 2.0)
+        {
+            think_time = static_cast<int64_t>(
+                think_time * 1.15
             );
         }
     }
 
     // --------------------------------------------------------
-    // Add part of the increment.
+    // Hard maximum.
+    //
+    // This is deliberately much lower than your old 15s
+    // maximum for normal positions.
     // --------------------------------------------------------
 
-    constexpr double INCREMENT_FRACTION = 0.5;
+    constexpr int64_t MAX_THINK_TIME_MS = 10000;
 
-    think_time += static_cast<int64_t>(
-        increment.count() * INCREMENT_FRACTION
-    );
-
-    // --------------------------------------------------------
-    // Limits.
-    // --------------------------------------------------------
-
-    constexpr int64_t MIN_THINK_TIME_MS = 1000;
-    constexpr int64_t MAX_THINK_TIME_MS = 15000;
-
-    think_time = std::clamp(
+    think_time = std::min(
         think_time,
-        MIN_THINK_TIME_MS,
         MAX_THINK_TIME_MS
     );
 
     // --------------------------------------------------------
-    // Safety margin.
+    // Never use too much of the remaining clock.
+    //
+    // This is the most important protection against flagging.
     // --------------------------------------------------------
 
-    constexpr int64_t SAFETY_MARGIN_MS = 100;
+    constexpr double MAX_CLOCK_FRACTION = 0.10;
+
+    const int64_t clock_limit =
+        static_cast<int64_t>(
+            time * MAX_CLOCK_FRACTION
+        );
+
+    think_time = std::min(
+        think_time,
+        clock_limit
+    );
+
+    // --------------------------------------------------------
+    // Minimum useful search time.
+    //
+    // Don't force 1 second when we have almost no time left.
+    // --------------------------------------------------------
+
+    constexpr int64_t MIN_THINK_TIME_MS = 100;
+
+    think_time = std::max(
+        think_time,
+        MIN_THINK_TIME_MS
+    );
+
+    // --------------------------------------------------------
+    // Safety margin.
+    //
+    // Leave considerably more than 100ms because the UCI
+    // communication, scheduling, and stopping the search all
+    // take time.
+    // --------------------------------------------------------
+
+    constexpr int64_t SAFETY_MARGIN_MS = 250;
 
     think_time = std::min(
         think_time,
