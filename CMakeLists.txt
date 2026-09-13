@@ -47,7 +47,7 @@ endif()
 # All warnings,
 # extra warnings
 
-add_compile_options(-Wall -Wextra)
+add_compile_options(-Wall -Wextra -Wno-dev)
 
 # Source files from src/*.cpp & src/*.c
 
@@ -62,7 +62,6 @@ include_directories(include)
 # ====================
 
 # ncurses
-
 find_package(Curses REQUIRED)
 
 # ====================
@@ -131,6 +130,10 @@ if(PGO_MODE STREQUAL "GENERATE")
     target_compile_definitions(${PROJECT_NAME} PRIVATE PGO_TEST)
 elseif(CHESS_UCI_SERVER)
     target_compile_definitions(${PROJECT_NAME} PRIVATE UCI_SERVER)
+elseif(CHESS_CONSOLE_APP)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE CONSOLE_APP)
+elseif(CHESS_MATCH_TEST)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE MATCH_TEST)
 else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE MATCH_TEST)
 endif()

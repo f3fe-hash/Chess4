@@ -43,7 +43,7 @@ echo "Press Ctrl+C when you have collected enough data."
 echo
 
 # Record performance data
-perf record -F 99 -g -- "$CHESS"
+perf record -F 200 -g -- "$CHESS"
 
 echo
 echo "Converting perf data..."

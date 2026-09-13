@@ -103,8 +103,7 @@ int main()
 #endif
 
 #ifdef MATCH_TEST
-    // bot1 is already defined
-    //bot1 = std::make_shared<ChessBot>(board);
+    bot1 = std::make_shared<ChessBot>(board);
     bot2 = std::make_shared<ChessBot>(board);
     
     Console console(board, bot1);
@@ -118,7 +117,9 @@ int main()
     {
         MoveResult result;
 
-        if (board->GetTurnColor() == TURN_WHITE)
+        bool turn = board->GetTurnColor() == TURN_WHITE;
+
+        if (turn)
         {
             result = bot1->Search(3, 100);
         }
@@ -129,7 +130,7 @@ int main()
 
         board->MakeMove(result.move);
 
-        if (board->GetTurnColor() == TURN_WHITE)
+        if (turn)
         {
             std::cout << "[BOT1] has made the move ";
         }
@@ -143,11 +144,11 @@ int main()
 
     if (board->GetTurnColor() == TURN_WHITE)
     {
-        std::cout << "[BOT1] Has won (or drawn)! (black)" << std::endl;
+        std::cout << "[BOT1] Has won (or drawn)! (white)" << std::endl;
     }
     else
     {
-        std::cout << "[BOT2] Has won (or drawn)! (white)" << std::endl;
+        std::cout << "[BOT2] Has won (or drawn)! (black)" << std::endl;
     }
 #endif
 
