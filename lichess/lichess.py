@@ -47,6 +47,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import requests
+import chess
 
 try:
     from .chat import GroqChat
@@ -427,11 +428,18 @@ class GameWorker:
     last_move: Optional[str] = None
     evaluation: Optional[str] = None
 
-    # Number of plies in the last state for which we completed
-    # processing. None means no state has been processed yet.
+    # Current authoritative chess position.
+    board: chess.Board = field(
+        default_factory=chess.Board,
+    )
+
+    # Complete move history received from Lichess.
+    move_history: list[str] = field(
+        default_factory=list,
+    )
+
     last_processed_ply: Optional[int] = None
 
-    # Prevent accidental duplicate processing inside this game.
     state_lock: threading.Lock = field(
         default_factory=threading.Lock,
         repr=False,
@@ -494,15 +502,24 @@ class GameWorker:
         if not text or username.lower() == self.bot_id.lower():
             return
 
+        context = self.get_chat_context()
+
         reply = self.chat.reply(
             username,
             text,
-            last_move=self.last_move,
-            evaluation=self.evaluation,
+            **context,
         )
 
-        self.api.send_chat(self.game_id, reply, room=room)
-        log(f"[{self.game_id}] Chat reply to {username}: {reply}")
+        self.api.send_chat(
+            self.game_id,
+            reply,
+            room=room,
+        )
+
+        log(
+            f"[{self.game_id}] "
+            f"Chat reply to {username}: {reply}"
+        )
 
     def process_position(
         self,
@@ -512,14 +529,12 @@ class GameWorker:
         """
         Process exactly one new game state.
 
-        The move list from Lichess is authoritative. We do not
-        maintain a separate local chess board, so reconnecting
-        after a restart is safe.
+        The move list from Lichess is authoritative.
         """
 
         ply = len(moves)
 
-        self.last_move = moves[-1] if moves else None
+        self.rebuild_board(moves)
 
         with self.state_lock:
             if (
@@ -528,9 +543,6 @@ class GameWorker:
             ):
                 return
 
-            # A gameState with fewer moves than the last state is
-            # not expected in normal play. Ignore it rather than
-            # attempting to rewind a live game.
             if (
                 self.last_processed_ply is not None
                 and ply < self.last_processed_ply
@@ -542,7 +554,6 @@ class GameWorker:
                 self.last_processed_ply = ply
             return
 
-        # It is our turn. Reconstruct the complete position.
         self.ensure_engine()
 
         assert self.engine is not None
@@ -576,13 +587,32 @@ class GameWorker:
             f"(eval: {evaluation})"
         )
 
-        # Submit only after the engine has produced a move.
         self.api.make_move(self.game_id, move)
 
-        # Mark this exact position as processed only after the move
-        # was successfully accepted by the API.
         with self.state_lock:
             self.last_processed_ply = ply
+
+        # Update our local board immediately after successfully
+        # submitting our move. This means chat occurring between
+        # this move and Lichess's next gameState already sees the
+        # correct position.
+        try:
+            chess_move = chess.Move.from_uci(move)
+
+            if chess_move not in self.board.legal_moves:
+                log_error(
+                    f"[{self.game_id}] Engine produced move "
+                    f"{move} that is illegal on local board"
+                )
+            else:
+                self.board.push(chess_move)
+                self.move_history.append(move)
+                self.last_move = move
+
+        except ValueError as exc:
+            log_error(
+                f"[{self.game_id}] Invalid engine move {move}: {exc}"
+            )
 
     def run(self) -> None:
         log(f"[{self.game_id}] Game worker started")
@@ -595,9 +625,23 @@ class GameWorker:
                 event_type = event.get("type")
 
                 if event_type == "gameFull":
-                    self.determine_color(event)
-
                     state = event.get("state", {})
+
+                    if state.get("status") != "started":
+                        log(
+                            f"[{self.game_id}] "
+                            f"Game already ended: {state.get('status')}"
+                        )
+                        break
+
+                    if not self.is_recent_game(event):
+                        log(
+                            f"[{self.game_id}] "
+                            "Game is older than 24 hours; ignoring"
+                        )
+                        break
+
+                    self.determine_color(event)
 
                     moves = parse_moves(
                         state.get("moves", "")
@@ -661,6 +705,141 @@ class GameWorker:
             self.stop_event.set()
             self.close_engine()
             log(f"[{self.game_id}] Game worker stopped")
+    
+    def rebuild_board(self, moves: list[str]) -> None:
+        """
+        Rebuild the board from the authoritative Lichess move list.
+
+        Lichess gives us UCI moves, so python-chess can reconstruct
+        the complete position including castling, en passant, etc.
+        """
+
+        board = chess.Board()
+
+        for move_string in moves:
+            move = chess.Move.from_uci(move_string)
+
+            if move not in board.legal_moves:
+                raise RuntimeError(
+                    f"Illegal move while rebuilding game: "
+                    f"{move_string}"
+                )
+
+            board.push(move)
+
+        self.board = board
+        self.move_history = list(moves)
+
+        self.last_move = moves[-1] if moves else None
+
+    def get_material_summary(self) -> str:
+        """Return a compact material summary."""
+
+        piece_names = {
+            chess.PAWN: "P",
+            chess.KNIGHT: "N",
+            chess.BISHOP: "B",
+            chess.ROOK: "R",
+            chess.QUEEN: "Q",
+            chess.KING: "K",
+        }
+
+        def color_material(color: chess.Color) -> str:
+            pieces: list[str] = []
+
+            for piece_type in (
+                chess.QUEEN,
+                chess.ROOK,
+                chess.BISHOP,
+                chess.KNIGHT,
+                chess.PAWN,
+            ):
+                count = len(
+                    self.board.pieces(piece_type, color)
+                )
+
+                if count:
+                    pieces.append(
+                        piece_names[piece_type] * count
+                    )
+
+            return " ".join(pieces) if pieces else "none"
+
+        return (
+            f"White: {color_material(chess.WHITE)}; "
+            f"Black: {color_material(chess.BLACK)}"
+        )
+
+    def get_chat_context(self) -> dict:
+        """Build the complete chess context for the chat model."""
+
+        side_to_move = (
+            "white"
+            if self.board.turn == chess.WHITE
+            else "black"
+        )
+
+        status = "playing"
+
+        if self.board.is_checkmate():
+            status = "checkmate"
+        elif self.board.is_stalemate():
+            status = "stalemate"
+        elif self.board.is_insufficient_material():
+            status = "draw by insufficient material"
+        elif self.board.is_fifty_moves():
+            status = "draw by fifty-move rule"
+        elif self.board.is_repetition():
+            status = "draw by repetition"
+
+        recent_moves = self.move_history[-12:]
+
+        legal_moves = [
+            move.uci()
+            for move in self.board.legal_moves
+        ]
+
+        return {
+            "board_fen": self.board.fen(),
+            "board_ascii": str(self.board),
+            "bot_color": self.color,
+            "side_to_move": side_to_move,
+            "last_move": self.last_move,
+            "evaluation": self.evaluation,
+            "move_number": self.board.fullmove_number,
+            "material": self.get_material_summary(),
+            "status": status,
+            "in_check": self.board.is_check(),
+            "legal_moves": legal_moves,
+            "recent_moves": recent_moves,
+        }
+
+    def is_recent_game(self, event: dict) -> bool:
+        """
+        Only resume games that had activity within the last 24 hours.
+
+        Prefer lastMoveAt because an old game that was recently resumed
+        should still be considered recent. Fall back to createdAt for
+        games that have never had a move.
+        """
+        now_ms = int(time.time() * 1000)
+
+        last_activity_ms = event.get("lastMoveAt")
+
+        if last_activity_ms is None:
+            last_activity_ms = event.get("createdAt")
+
+        if last_activity_ms is None:
+            # If Lichess doesn't provide either timestamp, don't reject
+            # the game solely because of missing metadata.
+            return True
+
+        try:
+            age_seconds = (now_ms - int(last_activity_ms)) / 1000
+        except (TypeError, ValueError):
+            return True
+
+        return age_seconds <= STALE_GAME_SECONDS
 
 
 # ============================================================
