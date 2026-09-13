@@ -11,6 +11,7 @@ TIME_CONTROLS = {
     "Bullet 3+0": (180, 180, 0),
     "Casual 15+10": (900, 900, 10),
     "Slow-fast 10+5 vs 1+5": (600, 60, 5),
+    "Infinite": (1234567890, 1234567890, 100000000)
 }
 
 DEFAULT_TIME_CONTROL = "Blitz 1+1"

@@ -54,6 +54,12 @@ void ChessBot::SetTimeLimit(DurationMs _time_limit)
 }
 
 
+static inline float BellCurve(float x)
+{
+    return exp(-x * x);
+}
+
+
 DurationMs ChessBot::CalculateThinkTime(
     const DurationMs wtime,
     const DurationMs btime,
@@ -79,113 +85,205 @@ const
     const int64_t increment =
         (white_to_move ? winc : binc).count();
 
+    // No time remaining. Return immediately rather than
+    // attempting to calculate a normal search time.
     if (time <= 0)
         return DurationMs(1);
 
     // --------------------------------------------------------
-    // Constants.
+    // Configuration.
     // --------------------------------------------------------
 
-    //constexpr double MIN_TIME_FRACTION = 0.003;
-    constexpr double MAX_TIME_FRACTION = 0.020;
+    // Normal minimum and maximum search times.
+    //
+    // The minimum is only used while we still have enough time
+    // for it to be safe. The final safety check below can reduce
+    // the actual value.
+    constexpr double MINIMUM_TIME = 1.0;
+    constexpr double MAXIMUM_TIME = 20.0;
 
-    constexpr int64_t MIN_THINK_TIME_MS = 100;
-    constexpr int64_t MAX_THINK_TIME_MS = 15000;
-
+    // Always leave some time on the clock for UCI communication,
+    // scheduling, and stopping the search.
     constexpr int64_t SAFETY_MARGIN_MS = 250;
 
     // --------------------------------------------------------
-    // Determine the original time control.
-    //
-    // The original time is important because 30 seconds left
-    // means something very different in a 1-minute game than
-    // it does in a 15-minute game.
+    // Game phase.
     // --------------------------------------------------------
 
-    const int64_t control_time =
-        std::max<int64_t>(1, original_time);
+    const double endgame =
+        static_cast<double>(evaluator.GetEndgamePhase()) / 256.0;
 
-    // --------------------------------------------------------
-    // Base allocation.
+    // endgame:
     //
-    // Approximately:
+    //   0.0 = opening
+    //   0.5 = middlegame
+    //   1.0 = endgame
     //
-    //   1 min  -> ~1 sec
-    //   2 min  -> ~1.7 sec
-    //   5 min  -> ~4 sec
-    //  10 min  -> ~8 sec
-    //  15 min  -> ~10-12 sec
-    //
-    // sqrt() makes the growth sub-linear so that a 60-minute
-    // game doesn't result in absurdly long searches.
+    // Your existing BellCurve() shaping is retained, but the
+    // result is used as a multiplier on a base allocation rather
+    // than being responsible for the entire time calculation.
     // --------------------------------------------------------
 
-    const double control_minutes =
-        static_cast<double>(control_time) / 60000.0;
+    double phase_multiplier;
 
-    double base_seconds =
-        0.85 * std::sqrt(control_minutes);
+    if (endgame > 0.20)
+    {
+        // Middlegame / endgame.
+        //
+        // Spend somewhat more time as the position becomes
+        // tactically important and material decreases.
+        phase_multiplier =
+            BellCurve(2.0 * endgame);
+    }
+    else
+    {
+        // Opening / early middlegame.
+        //
+        // Spend less time here because opening positions are
+        // generally less dependent on deep calculation.
+        phase_multiplier =
+            BellCurve(12.0 * (endgame - 1.0));
+    }
 
-    // Scale slightly upward for longer time controls.
-    if (control_minutes >= 10.0)
-        base_seconds *= 1.20;
+    // --------------------------------------------------------
+    // Base time allocation.
+    // --------------------------------------------------------
+    //
+    // The original time control determines how much time we
+    // normally want to spend on a move.
+    //
+    // Examples:
+    //
+    //     1 minute  -> ~1 second
+    //     2 minutes -> ~1.5 seconds
+    //     5 minutes -> ~4 seconds
+    //    10 minutes -> ~8 seconds
+    //    15 minutes -> ~10-12 seconds
+    //
+    // sqrt() gives diminishing returns for very long games.
+    // --------------------------------------------------------
 
-    if (control_minutes >= 15.0)
-        base_seconds *= 1.10;
-
-    int64_t think_time =
-        static_cast<int64_t>(
-            base_seconds * 1000.0
+    const double original_minutes =
+        std::max(
+            1.0,
+            static_cast<double>(original_time) / 60000.0
         );
 
+    double play_time =
+        0.85 * std::sqrt(original_minutes);
+
+    // Longer time controls can afford proportionally more
+    // thinking, but don't let this grow without bound.
+    if (original_minutes >= 10.0)
+        play_time *= 1.20;
+
+    if (original_minutes >= 15.0)
+        play_time *= 1.10;
+
+    // Apply the position phase.
+    play_time *= phase_multiplier;
+
     // --------------------------------------------------------
-    // Adjust based on how much of the original clock remains.
+    // Remaining-clock adjustment.
+    // --------------------------------------------------------
     //
-    // If we've spent very little of our original time, we can
-    // use the normal allocation.
+    // This is important:
     //
-    // If we've burned most of our clock, become increasingly
-    // conservative.
+    // 15 minutes remaining in a 15-minute game is healthy.
+    // 15 minutes remaining in a 30-minute game is not.
+    //
+    // Likewise, 30 seconds remaining in a 1-minute game should
+    // cause us to think much less than 30 seconds remaining in
+    // a 15-minute game.
     // --------------------------------------------------------
 
     const double remaining_fraction =
         static_cast<double>(time) /
-        static_cast<double>(control_time);
+        static_cast<double>(
+            std::max<int64_t>(1, original_time)
+        );
 
     if (remaining_fraction < 0.10)
     {
-        // Less than 10% of original clock remains.
-        think_time = static_cast<int64_t>(
-            think_time * 0.35
-        );
+        // Critically low on time.
+        play_time *= 0.30;
     }
     else if (remaining_fraction < 0.20)
     {
-        think_time = static_cast<int64_t>(
-            think_time * 0.50
-        );
+        play_time *= 0.45;
     }
     else if (remaining_fraction < 0.35)
     {
-        think_time = static_cast<int64_t>(
-            think_time * 0.70
-        );
+        play_time *= 0.65;
     }
     else if (remaining_fraction < 0.50)
     {
-        think_time = static_cast<int64_t>(
-            think_time * 0.85
-        );
+        play_time *= 0.85;
+    }
+
+    // --------------------------------------------------------
+    // Opponent clock adjustment.
+    // --------------------------------------------------------
+    //
+    // If we're significantly behind on time, conserve our clock.
+    // If we're significantly ahead, we can afford to calculate
+    // longer.
+    // --------------------------------------------------------
+
+    if (opponent_time > 0)
+    {
+        const double clock_ratio =
+            static_cast<double>(time) /
+            static_cast<double>(opponent_time);
+
+        if (clock_ratio < 0.35)
+        {
+            play_time *= 0.60;
+        }
+        else if (clock_ratio < 0.60)
+        {
+            play_time *= 0.75;
+        }
+        else if (clock_ratio < 0.80)
+        {
+            play_time *= 0.90;
+        }
+        else if (clock_ratio > 2.50)
+        {
+            play_time *= 1.20;
+        }
+        else if (clock_ratio > 1.75)
+        {
+            play_time *= 1.10;
+        }
+    }
+
+    // --------------------------------------------------------
+    // Increment.
+    // --------------------------------------------------------
+    //
+    // Part of the increment can safely be spent on the current
+    // move because that time is recovered after making the move.
+    // --------------------------------------------------------
+
+    if (increment > 0)
+    {
+        constexpr double INCREMENT_FRACTION = 0.40;
+
+        play_time +=
+            (static_cast<double>(increment) / 1000.0) *
+            INCREMENT_FRACTION;
     }
 
     // --------------------------------------------------------
     // Short-clock protection.
+    // --------------------------------------------------------
     //
-    // Regardless of the original time control, don't spend a
-    // huge amount of the remaining clock on one move.
+    // Never allow one move to consume too large a percentage
+    // of the remaining clock.
     // --------------------------------------------------------
 
-    double maximum_clock_fraction = MAX_TIME_FRACTION;
+    double maximum_clock_fraction;
 
     if (time <= 5000)
         maximum_clock_fraction = 0.10;
@@ -198,105 +296,45 @@ const
     else
         maximum_clock_fraction = 0.05;
 
-    const int64_t clock_limit =
-        static_cast<int64_t>(
-            time * maximum_clock_fraction
-        );
+    const double clock_limit =
+        (static_cast<double>(time) *
+         maximum_clock_fraction) / 1000.0;
 
-    think_time = std::min(
-        think_time,
+    play_time = std::min(
+        play_time,
         clock_limit
     );
 
     // --------------------------------------------------------
-    // Opponent clock.
-    //
-    // If we're behind, conserve time.
-    // If we're far ahead, allow somewhat deeper searches.
+    // Final limits.
     // --------------------------------------------------------
 
-    if (opponent_time > 0)
-    {
-        const double ratio =
-            static_cast<double>(time) /
-            static_cast<double>(opponent_time);
-
-        if (ratio < 0.35)
-        {
-            think_time = static_cast<int64_t>(
-                think_time * 0.60
-            );
-        }
-        else if (ratio < 0.60)
-        {
-            think_time = static_cast<int64_t>(
-                think_time * 0.75
-            );
-        }
-        else if (ratio < 0.80)
-        {
-            think_time = static_cast<int64_t>(
-                think_time * 0.90
-            );
-        }
-        else if (ratio > 2.50)
-        {
-            think_time = static_cast<int64_t>(
-                think_time * 1.20
-            );
-        }
-        else if (ratio > 1.75)
-        {
-            think_time = static_cast<int64_t>(
-                think_time * 1.10
-            );
-        }
-    }
-
-    // --------------------------------------------------------
-    // Increment.
-    //
-    // The increment is effectively additional time that we
-    // recover after making the move, so we can spend part of
-    // it on the current move.
-    // --------------------------------------------------------
-
-    if (increment > 0)
-    {
-        constexpr double INCREMENT_FRACTION = 0.40;
-
-        think_time += static_cast<int64_t>(
-            increment * INCREMENT_FRACTION
-        );
-    }
-
-    // --------------------------------------------------------
-    // Never let a single move consume an unreasonable amount
-    // of the clock.
-    // --------------------------------------------------------
-
-    think_time = std::clamp(
-        think_time,
-        MIN_THINK_TIME_MS,
-        MAX_THINK_TIME_MS
+    play_time = std::clamp(
+        play_time,
+        MINIMUM_TIME,
+        MAXIMUM_TIME
     );
 
-    // --------------------------------------------------------
-    // Final safety margin.
-    // --------------------------------------------------------
+    // Don't use the safety margin if doing so would result in
+    // an invalid or negative search time.
+    const double safe_time =
+        std::max(
+            0.001,
+            static_cast<double>(
+                time - SAFETY_MARGIN_MS
+            ) / 1000.0
+        );
 
-    think_time = std::min(
-        think_time,
-        std::max<int64_t>(
-            1,
-            time - SAFETY_MARGIN_MS
-        )
+    play_time = std::min(
+        play_time,
+        safe_time
     );
 
     return DurationMs(
-        std::max<int64_t>(1, think_time)
+        static_cast<int64_t>(play_time * 1000.0)
     );
 }
+
 
 
 // ------------------------------------------------------------

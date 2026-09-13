@@ -668,19 +668,21 @@ void UCI::SearchThread()
     {
         std::cerr
             << "[UCI] [depth " << result.depth << "] "
-            << "[mate" << result.mate_in_ply << "] "
+            << "[mate " << result.mate_in_ply << "] "
             << "[nodes " << result.nodes_searched << "]"
             << '\n';;
     }
-
-    std::cerr
-        << "[UCI] [depth " << result.depth << "] "
-        << "[evaluation "
-        << std::fixed
-        << std::setprecision(2)
-        << result.eval / 100 << "] "
-        << "[nodes " << result.nodes_searched << "]"
-        << '\n';
+    else
+    {
+        std::cerr
+            << "[UCI] [depth " << result.depth << "] "
+            << "[evaluation "
+            << std::fixed
+            << std::setprecision(2)
+            << result.eval / 100 << "] "
+            << "[nodes " << result.nodes_searched << "]"
+            << '\n';
+    }
 
 #ifdef PRINT_BOT_DEBUG
     PrintBotDebug();

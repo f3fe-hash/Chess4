@@ -58,32 +58,73 @@ public:
     Evaluation EvaluatePosition();
     Evaluation QuiescenceSearch();
 
-    // Endgame
-    inline int GetEndgamePhase()
+    // Game phase
+    inline int GetEndgamePhase() const
     {
-        // Gets the phase of the endgame.
-        // 0 = middlegame
-        // 256 = pure king/pawn endgame
+        // Returns the approximate game phase:
+        //
+        //   0   = opening
+        //   128 = middlegame
+        //   256 = endgame
+        //
+        // The phase is based on non-pawn material remaining.
+
         int material = 0;
 
-        // Count the material
         material += board->CountQueens()  * GetQueenValue();
         material += board->CountRooks()   * GetRookValue();
         material += board->CountBishops() * GetBishopValue();
         material += board->CountKnights() * GetKnightValue();
 
+        // Approximate non-pawn material at the beginning of a game.
+        //
+        // 2 queens  = 2 * Q
+        // 4 rooks   = 4 * R
+        // 4 bishops = 4 * B
+        // 4 knights = 4 * N
+        //
+        // This should ideally be calculated from your actual starting
+        // piece values rather than hard-coded.
+        const int OPENING_MATERIAL =
+            2 * QUEEN_VALUE_OP +
+            4 * ROOK_VALUE_OP +
+            4 * BISHOP_VALUE_OP +
+            4 * KNIGHT_VALUE_OP;
+
         constexpr int ENDGAME_MATERIAL = 2000;
 
-        int phase = 256 - (material * 256 / ENDGAME_MATERIAL);
+        // More material -> lower phase.
+        //
+        // Opening material:
+        //     phase = 0
+        //
+        // Endgame threshold:
+        //     phase = 256
+        //
+        // Material below ENDGAME_MATERIAL is considered fully
+        // endgame and therefore remains at 256.
+        if (material >= OPENING_MATERIAL)
+            return 0;
+
+        if (material <= ENDGAME_MATERIAL)
+            return 256;
+
+        const int phase =
+            (OPENING_MATERIAL - material) * 256 /
+            (OPENING_MATERIAL - ENDGAME_MATERIAL);
 
         return std::clamp(phase, 0, 256);
     }
 
-    // `GetEndgamePhase` returns 0 for middlegame, and 256 for pure endgame.
-    inline bool IsEndgame()
-    { return GetEndgamePhase() > 127; }
+    inline bool IsEndgame() const
+    { return GetEndgamePhase() >= 171; }
 
-    // `GetEndgamePhase` returns 0 for middlegame, and 256 for pure endgame.
-    inline bool IsMiddlegame()
-    { return GetEndgamePhase() < 128; }
+    inline bool IsMiddlegame() const
+    {
+        const int phase = GetEndgamePhase();
+        return phase < 171 && phase > 85;
+    }
+
+    inline bool IsOpening() const
+    { return GetEndgamePhase() <= 85; }
 };
