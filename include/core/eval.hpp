@@ -22,6 +22,7 @@ class ChessBoardEvaluator
 
     inline int distance_to_edge(Square sq)
     {
+        // Returns the heuristic distance between a square and the nearest edge.
         int x = get_piece_x(sq);
         int y = get_piece_y(sq);
 
@@ -60,22 +61,29 @@ public:
     // Endgame
     inline int GetEndgamePhase()
     {
+        // Gets the phase of the endgame.
+        // 0 = middlegame
+        // 256 = pure king/pawn endgame
         int material = 0;
 
+        // Count the material
         material += board->CountQueens()  * GetQueenValue();
         material += board->CountRooks()   * GetRookValue();
         material += board->CountBishops() * GetBishopValue();
         material += board->CountKnights() * GetKnightValue();
 
-        // 0 = middlegame
-        // 256 = pure king/pawn endgame
         constexpr int ENDGAME_MATERIAL = 2000;
 
         int phase = 256 - (material * 256 / ENDGAME_MATERIAL);
 
         return std::clamp(phase, 0, 256);
     }
-    
+
+    // `GetEndgamePhase` returns 0 for middlegame, and 256 for pure endgame.
     inline bool IsEndgame()
-    { return GetEndgamePhase() > 180; }
+    { return GetEndgamePhase() > 127; }
+
+    // `GetEndgamePhase` returns 0 for middlegame, and 256 for pure endgame.
+    inline bool IsMiddlegame()
+    { return GetEndgamePhase() < 128; }
 };

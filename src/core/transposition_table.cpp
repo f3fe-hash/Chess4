@@ -53,7 +53,7 @@ void TranspositionTable::Store(
     // Empty slot?
     // --------------------------------------------------------
 
-    if (bucket.n_entries < 8)
+    if (bucket.n_entries < BUCKET_ENTRIES)
     {
         bucket.entries[bucket.n_entries] = stored_entry;
         ++bucket.n_entries;
@@ -130,7 +130,7 @@ TranspositionTableEntry TranspositionTable::GetEntry(const ZobristHash& key) con
 void TranspositionTable::SetBestMove(
     const ZobristHash& key,
     const Move& move,
-    const int depth)
+    const int& depth)
 {
     TranspositionTableEntry entry{};
 
@@ -155,9 +155,9 @@ void TranspositionTable::SetBestMove(
 
 void TranspositionTable::SetBound(
     const ZobristHash& key,
-    const Evaluation eval,
-    const int depth,
-    const TranspositionTableBound bound)
+    const Evaluation& eval,
+    const int& depth,
+    const TranspositionTableBound& bound)
 {
     TranspositionTableEntry entry{};
 
@@ -178,19 +178,19 @@ void TranspositionTable::SetBound(
 }
 
 
-void TranspositionTable::SetExact(const ZobristHash& key, const Evaluation exact_eval, const int depth)
+void TranspositionTable::SetExact(const ZobristHash& key, const Evaluation& exact_eval, const int& depth)
 {
     SetBound(key, exact_eval, depth, TranspositionTableBound::EXACT);
 }
 
 
-void TranspositionTable::SetLowerBound(const ZobristHash& key, const Evaluation lower_eval, const int depth)
+void TranspositionTable::SetLowerBound(const ZobristHash& key, const Evaluation& lower_eval, const int& depth)
 {
     SetBound(key, lower_eval, depth, TranspositionTableBound::LOWER);
 }
 
 
-void TranspositionTable::SetUpperBound(const ZobristHash& key, const Evaluation upper_eval, const int depth)
+void TranspositionTable::SetUpperBound(const ZobristHash& key, const Evaluation& upper_eval, const int& depth)
 {
     SetBound(key, upper_eval, depth, TranspositionTableBound::UPPER);
 }

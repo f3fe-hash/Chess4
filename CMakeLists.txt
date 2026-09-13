@@ -33,6 +33,9 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     # Max optimization
     add_compile_options(-Ofast)
+
+    # Allow maximum optmization
+    add_compile_definitions(RELEASE)
 elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
     # Debug optimization
     add_compile_options(-Og -g)

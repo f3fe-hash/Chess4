@@ -103,7 +103,8 @@ int main()
 #endif
 
 #ifdef MATCH_TEST
-    bot1 = std::make_shared<ChessBot>(board);
+    // bot1 is already defined
+    //bot1 = std::make_shared<ChessBot>(board);
     bot2 = std::make_shared<ChessBot>(board);
     
     Console console(board, bot1);
@@ -158,10 +159,10 @@ int main()
               << PGO_TIME_LIMIT.count()
               << " ms\n\n";
 
+    // The chessboard calculates expensive magic bitboards. Use one for the whole match.
+    auto game_board = std::make_shared<ChessBoard>();
     for (int game = 0; game < PGO_GAMES; ++game)
     {
-        auto game_board = std::make_shared<ChessBoard>();
-
         const char* fen =
             PGO_POSITIONS[game % PGO_POSITION_COUNT];
 

@@ -8,6 +8,15 @@
 
 inline const int BUCKETS = 65535;
 
+#ifdef RELEASE
+// In release mode, it is often playing many many games,
+// with the same transposition table. Give it more entries.
+inline const int BUCKET_ENTRIES = 32;
+#else
+// For debug, use smaller bucket sizes.
+inline const int BUCKET_ENTRIES = 8;
+#endif
+
 
 enum class TranspositionTableBound
 {
@@ -34,7 +43,7 @@ struct TranspositionTableEntry
 
     TranspositionTableEntry() = default;
     TranspositionTableEntry(const TranspositionTableEntry&) = default; // Copy
-    TranspositionTableEntry& operator=(const TranspositionTableEntry&) = default;
+    TranspositionTableEntry& operator = (const TranspositionTableEntry&) = default;
 };
 
 
@@ -71,7 +80,7 @@ class TranspositionTable
 
     struct Bucket
     {
-        Entry entries[8];
+        Entry entries[BUCKET_ENTRIES];
         int n_entries = 0;
     };
 
@@ -84,7 +93,7 @@ class TranspositionTable
     void Store(const ZobristHash& key, const TranspositionTableEntry& entry);
     TranspositionTableEntry Get(const ZobristHash& key) const;
 
-    void SetBound(const ZobristHash& key, const Evaluation exact_eval, const int depth, const TranspositionTableBound bound);
+    void SetBound(const ZobristHash& key, const Evaluation& exact_eval, const int& depth, const TranspositionTableBound& bound);
 
 public:
     TranspositionTable() = default;
@@ -97,10 +106,10 @@ public:
 
     TranspositionTableEntry GetEntry(const ZobristHash& key) const;
     
-    void SetBestMove(const ZobristHash& key, const Move& move, const int depth);
+    void SetBestMove(const ZobristHash& key, const Move& move, const int& depth);
 
-    void SetExact       (const ZobristHash& key, const Evaluation exact_eval, const int depth);
-    void SetLowerBound  (const ZobristHash& key, const Evaluation lower_eval, const int depth);
-    void SetUpperBound  (const ZobristHash& key, const Evaluation upper_eval, const int depth);
+    void SetExact       (const ZobristHash& key, const Evaluation& exact_eval, const int& depth);
+    void SetLowerBound  (const ZobristHash& key, const Evaluation& lower_eval, const int& depth);
+    void SetUpperBound  (const ZobristHash& key, const Evaluation& upper_eval, const int& depth);
 };
 
