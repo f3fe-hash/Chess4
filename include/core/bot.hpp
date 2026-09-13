@@ -7,6 +7,7 @@
 #include <chrono>
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 
 #include <unordered_map>
 

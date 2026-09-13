@@ -86,7 +86,7 @@ const
     // Constants.
     // --------------------------------------------------------
 
-    constexpr double MIN_TIME_FRACTION = 0.003;
+    //constexpr double MIN_TIME_FRACTION = 0.003;
     constexpr double MAX_TIME_FRACTION = 0.020;
 
     constexpr int64_t MIN_THINK_TIME_MS = 100;
@@ -185,7 +185,7 @@ const
     // huge amount of the remaining clock on one move.
     // --------------------------------------------------------
 
-    double maximum_clock_fraction;
+    double maximum_clock_fraction = MAX_TIME_FRACTION;
 
     if (time <= 5000)
         maximum_clock_fraction = 0.10;
