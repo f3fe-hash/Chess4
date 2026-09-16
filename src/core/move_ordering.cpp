@@ -68,11 +68,11 @@ void MoveOrder::OrderMoves(std::vector<Move>& moves, const int depth, const int 
 
     const ZobristHash key = board->GetZobristHash();
 
-    if (transposition_table->Contains(key))
+    bool found;
+    const TranspositionTableEntry entry = transposition_table->GetEntry(key, found);
+    if (found)
     {
-        const auto entry = transposition_table->GetEntry(key);
-
-        if (entry.depth >= depth)
+        if (entry.move_depth >= depth)
             tt_move = entry.best_move;
     }
 

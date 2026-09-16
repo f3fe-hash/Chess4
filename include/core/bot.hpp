@@ -18,14 +18,33 @@
 // Tracks how many times LMR was incorrect, and a re-search was necessary.
 #define DEBUG_LMR_RESEARCH
 
+// Logs search termination reasons
+#define DEBUG_SEARCH_TERMINATION
+
+
+#ifdef DEBUG_SEARCH_TERMINATION
+enum class SearchTermination
+{
+    Completed,
+    TimeUp,
+    TTExact,
+    Checkmate,
+    Stalemate
+};
+#endif
+
 struct BotDebugData
 {
-    // DEBUG_LMR_SEARCH
+    std::uint64_t nodes_searched = 0;
+
+#ifdef DEBUG_LMR_RESEARCH
     std::uint64_t lmr_research_count = 0;
     std::uint64_t total_lmr_research_depth = 0;
+#endif
 
-    // Always here
-    std::uint64_t nodes_searched = 0;
+#ifdef DEBUG_SEARCH_TERMINATION
+    std::vector<SearchTermination> terminations{};
+#endif
 };
 
 extern BotDebugData bot_debug;

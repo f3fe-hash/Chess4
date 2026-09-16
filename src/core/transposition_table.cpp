@@ -15,6 +15,21 @@ constexpr TranspositionTable::Bucket TranspositionTable::GetBucket(const Zobrist
 }
 
 
+static inline float CalculateReplacementScore(const TranspositionTableEntry& entry)
+{
+    // Calculates a "score" for which entry should be replaced
+    const float edepth = static_cast<float>(entry.eval_depth);
+    const float mdepth = static_cast<float>(entry.move_depth);
+
+    // Eval depth preference & move depth preference
+    constexpr float EVAL_DEPTH_PREF = 2.0;
+    constexpr float MOVE_DEPTH_PREF = 1.0;
+
+    const float score = EVAL_DEPTH_PREF * edepth + MOVE_DEPTH_PREF * mdepth;
+    return score;
+}
+
+
 void TranspositionTable::Store(
     const ZobristHash& key,
     const TranspositionTableEntry& entry)
@@ -66,34 +81,42 @@ void TranspositionTable::Store(
         entry_idx < bucket.n_entries;
         ++entry_idx)
     {
-        if (bucket.entries[entry_idx].entry.depth <
-            bucket.entries[replacement_idx].entry.depth)
+        if (CalculateReplacementScore(bucket.entries[entry_idx].entry) <
+            CalculateReplacementScore(bucket.entries[replacement_idx].entry))
         {
             replacement_idx = entry_idx;
         }
     }
 
-    if (entry.depth < bucket.entries[replacement_idx].entry.depth)
-    {
-        return;
-    }
+    //if (
+    //    CalculateReplacementScore(entry) <
+    //    CalculateReplacementScore(bucket.entries[replacement_idx].entry)
+    //)
+    //{
+    //    return;
+    //}
 
     bucket.entries[replacement_idx] = stored_entry;
 }
 
 
 TranspositionTableEntry TranspositionTable::Get(
-    const ZobristHash& key) const
+    const ZobristHash& key, bool& found) const
 {
+    found = false;
     const Bucket& bucket = GetBucket(key);
 
     for (int entry_idx = 0; entry_idx < bucket.n_entries; entry_idx++)
     {
         const Entry& tt_entry = bucket.entries[entry_idx];
         if (tt_entry.is_valid(key))
+        {
+            found = true;
             return tt_entry.entry;
+        }
     }
 
+    // `found` is already false.
     return {};
 }
 
@@ -130,9 +153,9 @@ bool TranspositionTable::Contains(const ZobristHash& key) const
 }
 
 
-TranspositionTableEntry TranspositionTable::GetEntry(const ZobristHash& key) const
+TranspositionTableEntry TranspositionTable::GetEntry(const ZobristHash& key, bool& found) const
 {
-    return Get(key);
+    return Get(key, found);
 }
 
 
@@ -143,17 +166,17 @@ void TranspositionTable::SetBestMove(
 {
     TranspositionTableEntry entry{};
 
-    if (Contains(key))
+    bool found = false;
+    entry = Get(key, found);
+    if (found)
     {
-        entry = Get(key);
-
         // Don't replace a deeper entry.
-        if (entry.depth > depth)
+        if (entry.move_depth > depth)
             return;
     }
 
     entry.best_move = move;
-    entry.depth = static_cast<uint8_t>(depth);
+    entry.move_depth = static_cast<uint8_t>(depth);
 
     Store(key, entry);
 }
@@ -167,14 +190,14 @@ void TranspositionTable::SetBound(
 {
     TranspositionTableEntry entry{};
 
-    if (Contains(key))
+    bool found = false;
+    entry = Get(key, found);
+    if (found)
     {
-        entry = Get(key);
-
-        if (entry.depth > depth)
+        if (entry.eval_depth > depth)
             return;
 
-        if (entry.depth == depth &&
+        if (entry.eval_depth == depth &&
             entry.bound == TranspositionTableBound::EXACT &&
             bound != TranspositionTableBound::EXACT)
         {
@@ -184,7 +207,7 @@ void TranspositionTable::SetBound(
 
     entry.eval = eval;
     entry.bound = bound;
-    entry.depth = static_cast<uint8_t>(depth);
+    entry.eval_depth = static_cast<uint8_t>(depth);
 
     Store(key, entry);
 }

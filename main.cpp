@@ -10,6 +10,13 @@
 # include "interface/console.hpp"
 #endif
 
+// MATCH_TEST is now an alias for PGO_TEST.
+// This keeps the old build option working without maintaining
+// a separate match-test implementation.
+#ifdef MATCH_TEST
+#define PGO_TEST
+#endif
+
 #ifdef PGO_TEST
 
 namespace
@@ -68,6 +75,7 @@ constexpr std::size_t PGO_POSITION_COUNT =
 
 #endif
 
+
 std::shared_ptr<ChessBoard> board;
 std::shared_ptr<ChessBot> bot1, bot2;
 
@@ -75,7 +83,11 @@ std::shared_ptr<ChessBot> bot1, bot2;
 int main()
 {
     board = std::make_shared<ChessBoard>();
-    board->LoadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+
+    board->LoadFEN(
+        "rnbqkbnr/pppppppp/8/8/8/8/"
+        "PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    );
 
     bot1 = std::make_shared<ChessBot>(board);
 
@@ -86,7 +98,9 @@ int main()
     console.run();
 #endif
 
+
 #ifdef UCI_SERVER
+
     UCIServer server(
         []()
         {
@@ -100,57 +114,9 @@ int main()
         8080);
 
     server.Run();
+
 #endif
 
-#ifdef MATCH_TEST
-    bot1 = std::make_shared<ChessBot>(board);
-    bot2 = std::make_shared<ChessBot>(board);
-    
-    Console console(board, bot1);
-
-    bot1->SetTimeLimit(DurationMs(1000));
-    bot2->SetTimeLimit(DurationMs(1000));
-
-    while (!(board->IsCheckMate()
-        || board->IsStaleMate()
-        || board->IsThreeFoldRepition()))
-    {
-        MoveResult result;
-
-        bool turn = board->GetTurnColor() == TURN_WHITE;
-
-        if (turn)
-        {
-            result = bot1->Search(3, 100);
-        }
-        else
-        {
-            result = bot2->Search(3, 100);
-        }
-
-        board->MakeMove(result.move);
-
-        if (turn)
-        {
-            std::cout << "[BOT1] has made the move ";
-        }
-        else
-        {
-            std::cout << "[BOT2] has made the move ";
-        }
-
-        std::cout << console.MoveToString(result.move) << "." << std::endl;
-    }
-
-    if (board->GetTurnColor() == TURN_WHITE)
-    {
-        std::cout << "[BOT1] Has won (or drawn)! (white)" << std::endl;
-    }
-    else
-    {
-        std::cout << "[BOT2] Has won (or drawn)! (black)" << std::endl;
-    }
-#endif
 
 #ifdef PGO_TEST
 
@@ -160,8 +126,10 @@ int main()
               << PGO_TIME_LIMIT.count()
               << " ms\n\n";
 
-    // The chessboard calculates expensive magic bitboards. Use one for the whole match.
+    // The chessboard calculates expensive magic bitboards.
+    // Use one board for the whole match.
     auto game_board = std::make_shared<ChessBoard>();
+
     for (int game = 0; game < PGO_GAMES; ++game)
     {
         const char* fen =
@@ -226,6 +194,15 @@ int main()
             game_board->MakeMove(result.move);
 
             ++move_count;
+
+#ifdef DEBUG
+            std::cout
+                << "Move " << (move_count + 1)
+                << ": " << result.move.ToStr()
+                << '\n'
+                << "FEN: " << game_board->GetFEN()
+                << '\n';
+#endif
         }
 
         std::cout
@@ -247,6 +224,11 @@ int main()
             std::cout << "Result: threefold repetition\n";
         }
 
+#ifdef DEBUG
+        PrintBotDebug();
+        ClearBotDebug();
+#endif
+
         std::cout << '\n';
     }
 
@@ -254,7 +236,6 @@ int main()
 
 #endif
 
+
     return 0;
 }
-
-

@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <string>
 #include <sstream>
+#include <cctype>
 
 #ifdef DEBUG
 #include <iostream>
@@ -151,6 +152,18 @@ struct Move
         return from == NULL_PIECE;
     }
 
+    std::string ToStr() const
+    {
+        char buff[5] = {0, 0, 0, 0, 0};
+
+        buff[0] = get_piece_x(from) + 'a';
+        buff[1] = get_piece_y(from) + '1';
+        buff[2] = get_piece_x(to) + 'a';
+        buff[3] = get_piece_y(to) + '1';
+
+        return std::string(buff);
+    }
+
     bool operator==(const Move& other) const
     {
         return from == other.from &&
@@ -226,8 +239,10 @@ class ChessBoard
 
     CastlingRights castling_rights;
 
-    // En-passant target square, or 64 when no target exists.
     Square en_passant;
+
+    uint16_t halfmove_clock = 0;
+    uint16_t fullmove_number = 1;
 
     uint64_t zobrist_hash;
 
@@ -333,6 +348,8 @@ public:
 
     // Load board from FEN string. Returns true on success.
     bool LoadFEN(const std::string& fen);
+
+    std::string GetFEN() const;
 
     uint64_t GenerateZobristHash() const;
 

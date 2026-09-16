@@ -1,6 +1,9 @@
 #include "core/bot.hpp"
 
 
+
+
+
 #ifdef DEBUG
 BotDebugData bot_debug{};
 
@@ -9,21 +12,260 @@ void PrintBotDebug()
     std::cout << "[DEBUG] LMR re-searches: "
         << bot_debug.lmr_research_count
         << std::endl;
+    
+#ifdef DEBUG_LMR_RESEARCH
+    if (bot_debug.lmr_research_count == 0)
+    {
+        std::cout << "[DEBUG] LMR Avg. re-search depth: 0.00" << std::endl;
+    }
+    else
+    {
+        std::cout << "[DEBUG] LMR Avg. re-search depth: "
+            << std::fixed << std::setprecision(2)
+            << (float)bot_debug.total_lmr_research_depth / (float)bot_debug.lmr_research_count
+            << std::endl;
+    }
 
-    std::cout << "[DEBUG] LMR Avg. re-search depth: "
-        << std::fixed << std::setprecision(2)
-        << (float)bot_debug.total_lmr_research_depth / (float)bot_debug.lmr_research_count
-        << std::endl;
+    if (bot_debug.nodes_searched == 0)
+    {
+        std::cout << "[DEBUG] average % of moves re-searched: N / A" << std::endl;
+    }
+    else
+    {
+        std::cout << "[DEBUG] average % of moves re-searched: "
+            << std::fixed << std::setprecision(2)
+            << ((float)bot_debug.lmr_research_count / (float)bot_debug.nodes_searched) * 100
+            << std::endl;
+    }
+#endif
 
-    std::cout << "[DEBUG] average % of moves re-searched: "
-        << std::fixed << std::setprecision(2)
-        << ((float)bot_debug.lmr_research_count / (float)bot_debug.nodes_searched) * 100
-        << std::endl;
+#ifdef DEBUG_SEARCH_TERMINATION
+    // Track stats for each of these:
+    // Completed,
+    // TimeUp,
+    // TTExact,
+    // Checkmate,
+    // Stalemate
+    const float total_terminations = (float)bot_debug.terminations.size();
+    float term_completed = 0;
+    float term_timeup = 0;
+    float term_ttexact = 0;
+    float term_checkmate = 0;
+    float term_stalemate = 0;
+    for (const SearchTermination term : bot_debug.terminations)
+    {
+        switch (term)
+        {
+            case SearchTermination::Completed: term_completed++; break;
+            case SearchTermination::TimeUp: term_timeup++; break;
+            case SearchTermination::TTExact: term_ttexact++; break;
+            case SearchTermination::Checkmate: term_checkmate++; break;
+            case SearchTermination::Stalemate: term_stalemate++; break;
+        }
+    }
+
+    if (total_terminations)
+    {
+        std::cout << "Termination percentages (" << total_terminations << " terminations)" << std::endl;
+
+        std::cout
+            << std::fixed << std::setprecision(2)
+            << "Termination via completion: " << (term_completed / total_terminations) * 100 << "%"
+            << std::endl;
+
+        std::cout
+            << std::fixed << std::setprecision(2)
+            << "Termination via time up: " << (term_timeup / total_terminations) * 100 << "%"
+            << std::endl;
+
+        std::cout
+            << std::fixed << std::setprecision(2)
+            << "Termination via TT exact: " << (term_ttexact / total_terminations) * 100 << "%"
+            << std::endl;
+
+        std::cout
+            << std::fixed << std::setprecision(2)
+            << "Termination via checkmate: " << (term_checkmate / total_terminations) * 100 << "%"
+            << std::endl;
+
+        std::cout
+            << std::fixed << std::setprecision(2) <<
+            "Termination via stalemate: " << (term_stalemate / total_terminations) * 100 << "%"
+            << std::endl;
+    }
+#endif
 }
 
 void ClearBotDebug()
 {
     bot_debug = BotDebugData{};
+}
+
+// ------------------------------------------------------------
+// Search safety / diagnostic guard rails.
+// ------------------------------------------------------------
+//
+// These checks do NOT modify search behavior. They only report
+// suspicious completed searches so unexpected TT/Zobrist/
+// MakeMove/UndoMove/search-state problems are easier to spot.
+//
+// In particular, a very deep search completing with very few
+// nodes can indicate that the search is unexpectedly receiving
+// TT cutoffs or otherwise skipping large portions of the tree.
+
+constexpr int GUARDRAIL_DEPTH_WARNING = 100;
+constexpr uint64_t GUARDRAIL_LOW_NODE_THRESHOLD = 200'000;
+constexpr int GUARDRAIL_LOW_NODE_MIN_DEPTH = 8;
+
+// A large node-count increase between consecutive completed
+// iterations is worth reporting. This is intentionally loose
+// because normal alpha-beta behavior can produce large changes
+// between depths.
+// On average, there are ~30 moves in a chess position. We
+// should be alerted when there is way more than that. However,
+// LMR and alpha-beta pruning deals with some nodes, but not all.
+// If it is an over ~100 move spike, we should be concerned, or at
+// least notified.
+constexpr double GUARDRAIL_NODE_SPIKE_RATIO = 100.0;
+
+// Don't warn past this. Occasionally there will be massive
+// spikes (ex. 1000x) for no reason. Remove the spikes with this.
+constexpr double GUARDRAIL_MAX_NODE_SPIKE_RATIO = 300.0;
+
+void CheckSearchGuardRails(
+    const int depth,
+    const int max_depth,
+    const uint64_t nodes,
+    const Evaluation eval,
+    const DurationMs elapsed,
+    const ZobristHash position_key,
+    const uint64_t previous_nodes
+)
+{
+    // --------------------------------------------------------
+    // Impossible / extremely suspicious node counts.
+    // --------------------------------------------------------
+
+    if (depth > 0 && nodes == 0)
+    {
+        std::cerr
+            << "[GUARDRAIL] WARNING: completed depth "
+            << depth
+            << " with ZERO nodes"
+            << " | max_depth=" << max_depth
+            << " | eval=" << eval
+            << " | hash=" << position_key
+            << std::endl;
+    }
+
+    // --------------------------------------------------------
+    // Extremely deep search.
+    // --------------------------------------------------------
+
+    // If it is a forced mate path, don't warn.
+    const bool is_mate =
+        std::abs(eval) >= CHECKMATE_SCORE - 1000;
+
+    if (depth >= GUARDRAIL_DEPTH_WARNING && !is_mate)
+    {
+        std::cerr
+            << "[GUARDRAIL] WARNING: very deep search completed"
+            << " | depth=" << depth
+            << " | nodes=" << nodes
+            << " | eval=" << eval
+            << " | time=" << elapsed.count() << "ms"
+            << " | hash=" << position_key
+            << std::endl;
+    }
+
+    // --------------------------------------------------------
+    // Deep search with suspiciously few nodes.
+    // --------------------------------------------------------
+
+    if (
+        depth >= GUARDRAIL_LOW_NODE_MIN_DEPTH &&
+        nodes < GUARDRAIL_LOW_NODE_THRESHOLD &&
+        !is_mate
+    )
+    {
+        std::cerr
+            << "[GUARDRAIL] WARNING: suspiciously low node count"
+            << " | depth=" << depth
+            << " | nodes=" << nodes
+            << " | threshold=" << GUARDRAIL_LOW_NODE_THRESHOLD
+            << " | eval=" << eval
+            << " | time=" << elapsed.count() << "ms"
+            << " | hash=" << position_key
+            << std::endl;
+    }
+
+    // --------------------------------------------------------
+    // Especially suspicious combination:
+    //
+    //     depth >= 100
+    //     nodes < 200k
+    //
+    // Give this its own loud message so it is immediately
+    // visible in a long engine log.
+    // --------------------------------------------------------
+
+    if (
+        depth >= GUARDRAIL_DEPTH_WARNING &&
+        nodes < GUARDRAIL_LOW_NODE_THRESHOLD
+    )
+    {
+        if (is_mate)
+        {
+            std::cout
+                << "[GUARDRAIL] deep mate search | "
+                << "depth=" << depth
+                << " | nodes=" << nodes
+                << " | eval=" << eval
+                << '\n';
+        }
+        else
+        {
+            std::cerr
+                << "\n"
+                << "============================================================\n"
+                << "[GUARDRAIL] CRITICAL SEARCH ANOMALY\n"
+                << "Depth " << depth
+                << " completed with only " << nodes << " nodes.\n"
+                << "This is below the " << GUARDRAIL_LOW_NODE_THRESHOLD
+                << "-node safety threshold.\n"
+                << "Position hash: " << position_key << "\n"
+                << "Evaluation: " << eval << "\n"
+                << "Elapsed: " << elapsed.count() << " ms\n"
+                << "============================================================\n"
+                << std::endl;
+        }
+    }
+
+    // --------------------------------------------------------
+    // Sudden node-count explosion between iterations.
+    // --------------------------------------------------------
+
+    if (previous_nodes > 0)
+    {
+        const double ratio =
+            static_cast<double>(nodes) /
+            static_cast<double>(previous_nodes);
+
+        if (
+            ratio >= GUARDRAIL_NODE_SPIKE_RATIO &&
+            ratio <= GUARDRAIL_MAX_NODE_SPIKE_RATIO
+        )
+        {
+            std::cerr
+                << "[GUARDRAIL] WARNING: large node-count increase"
+                << " | depth=" << depth
+                << " | previous_nodes=" << previous_nodes
+                << " | nodes=" << nodes
+                << " | ratio=" << ratio << "x"
+                << " | eval=" << eval
+                << std::endl;
+        }
+    }
 }
 #endif
 
@@ -51,12 +293,6 @@ ChessBot::~ChessBot()
 void ChessBot::SetTimeLimit(DurationMs _time_limit)
 {
     time_limit_ms.store(_time_limit.count(), std::memory_order_relaxed);
-}
-
-
-static inline float BellCurve(float x)
-{
-    return exp(-x * x);
 }
 
 
@@ -101,12 +337,6 @@ const
     // Keep this much time in reserve for UCI communication,
     // scheduling delays, and stopping the search.
     constexpr int64_t SAFETY_MARGIN_MS = 250;
-
-    // Estimated number of moves remaining in the game.
-    //
-    // This is intentionally conservative. Using too small a
-    // number causes the engine to burn its clock too quickly.
-    constexpr double EXPECTED_MOVES_REMAINING = 40.0;
 
     // --------------------------------------------------------
     // Convert times to seconds.
@@ -169,29 +399,29 @@ const
     // simply isn't much time available.
     // --------------------------------------------------------
 
-    double reserve_fraction;
+    //double reserve_fraction;
 
-    if (original_seconds <= 60.0)
-    {
-        reserve_fraction = 0.10;
-    }
-    else if (original_seconds <= 300.0)
-    {
-        reserve_fraction = 0.12;
-    }
-    else
-    {
-        reserve_fraction = 0.15;
-    }
+    //if (original_seconds <= 60.0)
+    //{
+    //    reserve_fraction = 0.10;
+    //}
+    //else if (original_seconds <= 300.0)
+    //{
+    //    reserve_fraction = 0.12;
+    //}
+    //else
+    //{
+    //    reserve_fraction = 0.15;
+    //}
 
-    const double reserve =
-        original_seconds * reserve_fraction;
+    //const double reserve =
+    //    original_seconds * reserve_fraction;
 
-    const double usable_time =
-        std::max(
-            0.0,
-            time_seconds - reserve
-        );
+    //const double usable_time =
+    //    std::max(
+    //        0.0,
+    //        time_seconds - reserve
+    //    );
 
     // --------------------------------------------------------
     // Determine how much time we should normally spend per move.
@@ -478,6 +708,8 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
     const int move_idx          = params.move_idx;
     const bool is_root_search   = params.is_root_search;
 
+    const bool maximizing = board->GetTurnColor() == TURN_WHITE;
+
     // --------------------------------------------------------
     // Make the move.
     // --------------------------------------------------------
@@ -493,12 +725,15 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
 
     bool is_tt_move = false;
     const ZobristHash key = board->GetZobristHash();
-    if (transposition_table->Contains(key))
+
+    const TranspositionTableEntry entry = transposition_table->GetEntry(key, is_tt_move);
+    if (is_tt_move)
     {
-        if (transposition_table->GetEntry(key).best_move == move)
+        if (entry.best_move == move)
             is_tt_move = true;
     }
 
+    int lmr = 0;
     // LMR
     if (
         (extension == 0) &&
@@ -511,31 +746,38 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
     {
         if (!endgame)
         {
+            // If there are >120 moves in a position, I am assuming some are horrendous.
             if (move_idx >= 120)
-                extension -= LMR_EXT;
+                lmr = LMR_EXT;
+
             else if (move_idx >= 60)
-                extension -= LMR_HIG;
+                lmr = LMR_HIG;
+
             else if (move_idx >= 30)
-                extension -= LMR_MED;
+                lmr = LMR_MED;
+
             else if (move_idx >= 8)
-                extension -= LMR_LOW;
+                lmr = LMR_LOW;
         }
         else
         {
             // Much more conservative LMR for endgames.
             if (move_idx >= 150)
-                extension -= LMR_EXT;
+                lmr = LMR_EXT;
+
             else if (move_idx >= 80)
-                extension -= LMR_HIG;
+                lmr = LMR_HIG;
+
             else if (move_idx >= 50)
-                extension -= LMR_MED;
+                lmr = LMR_MED;
+
             else if (move_idx >= 20)
-                extension -= LMR_LOW;
+                lmr = LMR_LOW;
         }
     }
 
     // Ensure depth doesn't go negative.
-    int search_depth = std::max(0, depth - 1 + extension);
+    int search_depth = std::max(0, depth - 1 + extension - lmr);
 
     Evaluation eval =
         MainSearch(
@@ -552,10 +794,10 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
         return 0;
     }
 
-    constexpr Evaluation LMR_RESEARCH_MARGIN = 10;
+    // Centipawns
+    constexpr Evaluation LMR_RESEARCH_MARGIN = 5;
 
-    const bool was_reduced =
-        search_depth < depth - 1;
+    const bool was_reduced = lmr > 0;
 
     bool research = false;
 
@@ -570,7 +812,7 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
         // The move needs a re-search if it appears to improve
         // (lower) beta.
 
-        if (board->GetTurnColor() == TURN_BLACK)
+        if (maximizing)
         {
             research = eval > alpha + LMR_RESEARCH_MARGIN;
         }
@@ -650,6 +892,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
     int best_depth = 0;
 
+    uint64_t previous_completed_nodes = 0;
+
     // --------------------------------------------------------
     // Iterative deepening.
     // --------------------------------------------------------
@@ -683,13 +927,12 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         const ZobristHash root_key =
             board->GetZobristHash();
 
-        if (transposition_table->Contains(root_key))
+        bool found;
+        const TranspositionTableEntry move_entry = transposition_table->GetEntry(root_key, found);
+        if (found)
         {
-            const auto entry =
-                transposition_table->GetEntry(root_key);
-
-            if (entry.depth >= depth)
-                tt_move = entry.best_move;
+            if (move_entry.move_depth >= depth)
+                tt_move = move_entry.best_move;
         }
     
 #ifdef ORDER_MOVES
@@ -790,6 +1033,28 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
             best_depth = depth;
 
             best_move.eval = depth_eval;
+
+            const uint64_t completed_nodes =
+                nodes_searched.load(std::memory_order_relaxed);
+
+            const DurationMs elapsed =
+                std::chrono::duration_cast<DurationMs>(
+                    std::chrono::steady_clock::now() - search_start
+                );
+
+#ifdef DEBUG
+            CheckSearchGuardRails(
+                depth,
+                max_depth,
+                completed_nodes,
+                depth_eval,
+                elapsed,
+                board->GetZobristHash(),
+                previous_completed_nodes
+            );
+#endif
+
+            previous_completed_nodes = completed_nodes;
         }
         else
         {
@@ -848,6 +1113,8 @@ Evaluation ChessBot::MainSearch(
     // Time control.
     // --------------------------------------------------------
 
+    // The bot usually can search ~100k-200k NPS. At 200k NPS,
+    // it will search ~10k nodes in 5ms. This coarse timing is fine.
     if ((current_node & 4095) == 0)
     {
         if (stop_requested.load() ||
@@ -869,6 +1136,9 @@ Evaluation ChessBot::MainSearch(
             if (elapsed >= current_time_limit)
             {
                 time_up = true;
+#ifdef DEBUG_SEARCH_TERMINATION
+                bot_debug.terminations.push_back(SearchTermination::TimeUp);
+#endif
                 return 0;
             }
         }
@@ -906,6 +1176,9 @@ Evaluation ChessBot::MainSearch(
             //
             //     being mated as quickly as possible.
 
+#ifdef DEBUG_SEARCH_TERMINATION
+                bot_debug.terminations.push_back(SearchTermination::Checkmate);
+#endif
 
             if (maximizing)
             {
@@ -916,6 +1189,10 @@ Evaluation ChessBot::MainSearch(
                 return CHECKMATE_SCORE - ply;
             }
         }
+
+#ifdef DEBUG_SEARCH_TERMINATION
+            bot_debug.terminations.push_back(SearchTermination::Stalemate);
+#endif
 
         // No legal moves and not in check = stalemate.
         return 0;
@@ -938,35 +1215,41 @@ Evaluation ChessBot::MainSearch(
     // Transposition-table lookup.
     // --------------------------------------------------------
 
-    if (transposition_table->Contains(key))
+    bool found;
+    const TranspositionTableEntry lookup_entry = transposition_table->GetEntry(key, found);
+    if (found)
     {
-        const TranspositionTableEntry entry = transposition_table->GetEntry(key);
-
-        if (entry.depth >= depth)
+        if (lookup_entry.eval_depth >= depth)
         {
             Evaluation tt_eval =
-                DenormalizeMateScore(entry.eval, ply);
+                DenormalizeMateScore(lookup_entry.eval, ply);
 
-            switch (entry.bound)
+            switch (lookup_entry.bound)
             {
                 case TranspositionTableBound::EXACT:
+#ifdef DEBUG_SEARCH_TERMINATION
+                    bot_debug.terminations.push_back(SearchTermination::TTExact);
+#endif
                     return tt_eval;
 
                 case TranspositionTableBound::LOWER:
                     alpha = std::max(alpha, tt_eval);
+                    if (alpha >= beta)
+                        return tt_eval;
+                    
                     break;
 
                 case TranspositionTableBound::UPPER:
                     beta = std::min(beta, tt_eval);
+                    if (alpha >= beta)
+                        return tt_eval;
+                    
                     break;
                 
                 // TranspositionTableBound::NONE
                 default:
                     break;
             }
-
-            if (alpha >= beta)
-                return tt_eval;
         }
     }
 
@@ -975,11 +1258,11 @@ Evaluation ChessBot::MainSearch(
     // --------------------------------------------------------
 
     Move tt_move{};
-    if (transposition_table->Contains(key))
+    const TranspositionTableEntry move_entry = transposition_table->GetEntry(key, found);
+    if (found)
     {
-        const auto entry = transposition_table->GetEntry(key);
-        if (entry.depth >= depth)
-            tt_move = entry.best_move;
+        if (move_entry.move_depth >= depth)
+            tt_move = move_entry.best_move;
     }
 
     move_orderer->OrderMoves(moves, depth, ply);
@@ -1144,6 +1427,10 @@ Evaluation ChessBot::MainSearch(
     {
         transposition_table->SetBestMove(key, best_move, depth);
     }
+
+#ifdef DEBUG_SEARCH_TERMINATION
+    bot_debug.terminations.push_back(SearchTermination::Completed);
+#endif
 
     return best_eval;
 }

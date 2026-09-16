@@ -39,7 +39,8 @@ struct TranspositionTableEntry
     Evaluation eval = 0.00;
     TranspositionTableBound bound = TranspositionTableBound::NONE;
     Move best_move{};
-    uint8_t depth = 0;
+    uint8_t eval_depth = 0;
+    uint8_t move_depth = 0;
 
     TranspositionTableEntry() = default;
     TranspositionTableEntry(const TranspositionTableEntry&) = default; // Copy
@@ -91,7 +92,7 @@ class TranspositionTable
     constexpr Bucket GetBucket(const ZobristHash key) const;
 
     void Store(const ZobristHash& key, const TranspositionTableEntry& entry);
-    TranspositionTableEntry Get(const ZobristHash& key) const;
+    TranspositionTableEntry Get(const ZobristHash& key, bool& found) const;
 
     void SetBound(const ZobristHash& key, const Evaluation& exact_eval, const int& depth, const TranspositionTableBound& bound);
 
@@ -104,7 +105,7 @@ public:
 
     bool Contains(const ZobristHash& key) const;
 
-    TranspositionTableEntry GetEntry(const ZobristHash& key) const;
+    TranspositionTableEntry GetEntry(const ZobristHash& key, bool& found) const;
     
     void SetBestMove(const ZobristHash& key, const Move& move, const int& depth);
 

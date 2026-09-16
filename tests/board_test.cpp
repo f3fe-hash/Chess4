@@ -223,9 +223,10 @@ TEST(TranspositionTable, ReplacesShallowestEntry)
     const uint64_t replacementKey = bucket + 9 * 65535;
     table->SetExact(replacementKey, 99, 0);
 
+    bool found;
     EXPECT_FALSE(table->Contains(bucket + 65535));
     EXPECT_TRUE(table->Contains(replacementKey));
-    EXPECT_EQ(table->GetEntry(replacementKey).eval, 99);
+    EXPECT_EQ(table->GetEntry(replacementKey, found).eval, 99);
 }
 
 

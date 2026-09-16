@@ -415,12 +415,137 @@ bool ChessBoard::LoadFEN(const std::string& fen)
     }
 
     // Update occupancies and attacks
+    UpdateOccupancyBitboards();
     UpdateAttackBitboards();
 
     zobrist_hash = GenerateZobristHash();
     history.push_back(zobrist_hash);
 
     return true;
+}
+
+
+std::string ChessBoard::GetFEN() const
+{
+    std::ostringstream fen;
+
+    // Piece placement
+    for (int rank = 7; rank >= 0; --rank)
+    {
+        int empty = 0;
+
+        for (int file = 0; file < 8; ++file)
+        {
+            const Square square = Square((rank << 3) | file);
+            const Piece piece = pieces[square];
+
+            if (piece == NULL_PIECE)
+            {
+                ++empty;
+                continue;
+            }
+
+            if (empty != 0)
+            {
+                fen << empty;
+                empty = 0;
+            }
+
+            char piece_char;
+
+            switch (get_piece_type(piece))
+            {
+                case PIECE_TYPE_PAWN:
+                    piece_char = 'p';
+                    break;
+
+                case PIECE_TYPE_KNIGHT:
+                    piece_char = 'n';
+                    break;
+
+                case PIECE_TYPE_BISHOP:
+                    piece_char = 'b';
+                    break;
+
+                case PIECE_TYPE_ROOK:
+                    piece_char = 'r';
+                    break;
+
+                case PIECE_TYPE_QUEEN:
+                    piece_char = 'q';
+                    break;
+
+                case PIECE_TYPE_KING:
+                    piece_char = 'k';
+                    break;
+
+                default:
+                    piece_char = '?';
+                    break;
+            }
+
+            if (get_piece_color(piece) == PIECE_COLOR_WHITE)
+                piece_char = static_cast<char>(std::toupper(piece_char));
+
+            fen << piece_char;
+        }
+
+        if (empty != 0)
+            fen << empty;
+
+        if (rank != 0)
+            fen << '/';
+    }
+
+    // Side to move
+    fen << ' '
+        << (turn == TURN_WHITE ? 'w' : 'b');
+
+    // Castling rights
+    fen << ' ';
+
+    if (castling_rights == CASTLE_NONE)
+    {
+        fen << '-';
+    }
+    else
+    {
+        if (castling_rights & CASTLE_WK)
+            fen << 'K';
+
+        if (castling_rights & CASTLE_WQ)
+            fen << 'Q';
+
+        if (castling_rights & CASTLE_BK)
+            fen << 'k';
+
+        if (castling_rights & CASTLE_BQ)
+            fen << 'q';
+    }
+
+    // En-passant target
+    fen << ' ';
+
+    if (en_passant == 64)
+    {
+        fen << '-';
+    }
+    else
+    {
+        const int file = get_piece_x(en_passant);
+        const int rank = get_piece_y(en_passant);
+
+        fen << static_cast<char>('a' + file)
+            << static_cast<char>('1' + rank);
+    }
+
+    // Halfmove clock
+    fen << ' ' << halfmove_clock;
+
+    // Fullmove number
+    fen << ' ' << fullmove_number;
+
+    return fen.str();
 }
 
 
@@ -1064,6 +1189,8 @@ void ChessBoard::MakeMove(Move& move)
     move.captured = capturedPiece;
 
     turn ^= 1;
+
+    fullmove_number += turn == TURN_BLACK;
 
     UpdateAttackBitboardsOnly();
 

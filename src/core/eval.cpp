@@ -499,9 +499,10 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
     Move tt_move{};
     const ZobristHash key = board->GetZobristHash();
 
-    if (transposition_table->Contains(key))
+    bool found;
+    const TranspositionTableEntry entry = transposition_table->GetEntry(key, found);
+    if (found)
     {
-        const auto entry = transposition_table->GetEntry(key);
         tt_move = entry.best_move;
     }
 
