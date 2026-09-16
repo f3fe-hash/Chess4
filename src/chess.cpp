@@ -1474,6 +1474,8 @@ void ChessBoard::UndoMove(Move move)
 
     turn ^= 1;
 
+    fullmove_number -= turn == TURN_WHITE;
+
     UpdateAttackBitboardsOnly();
     //zobrist_hash = GenerateZobristHash();
 
