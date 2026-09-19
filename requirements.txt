@@ -9,8 +9,3 @@ python-chess
 
 zstandard
 
-torch
-onnx
-onnxscript
-onnxruntime
-numpy

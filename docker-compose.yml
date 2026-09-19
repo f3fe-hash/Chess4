@@ -3,7 +3,8 @@ services:
     profiles: ["local-engine"]
     build:
       context: .
-    command: ["./Chess"]
+    command:
+      - "./Chess"
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -23,7 +24,9 @@ services:
   lichess:
     build:
       context: .
-    command: ["python3", "lichess/lichess.py"]
+    command:
+      - "python3"
+      - "lichess/lichess.py"
     network_mode: host
     environment:
       LICHESS_TOKEN: ${LICHESS_TOKEN:?Set LICHESS_TOKEN in .env or the shell}
@@ -31,3 +34,68 @@ services:
       UCI_HOST: 127.0.0.1
       UCI_PORT: ${UCI_PORT:-8080}
     restart: unless-stopped
+
+  dataset:
+    build:
+      context: .
+      dockerfile: Dockerfile.training
+
+    command:
+      - "model/generate_dataset.py"
+      - "/data/lichess.pgn.zst"
+      - "--stockfish"
+      - "/usr/games/stockfish"
+      - "--output"
+      - "/data/training_positions.txt"
+      - "--checkpoint"
+      - "/data/dataset_checkpoint.json"
+      - "--positions"
+      - "${TRAINING_POSITIONS:-10000}"
+      - "--depth"
+      - "${TRAINING_DEPTH:-16}"
+      - "--min-ply"
+      - "${TRAINING_MIN_PLY:-16}"
+      - "--max-ply"
+      - "${TRAINING_MAX_PLY:-100}"
+      - "--sample-rate"
+      - "${TRAINING_SAMPLE_RATE:-0.10}"
+      - "--checkpoint-games"
+      - "${TRAINING_CHECKPOINT_GAMES:-100}"
+      - "--threads"
+      - "${TRAINING_THREADS:-4}"
+      - "--hash-mb"
+      - "${TRAINING_HASH_MB:-512}"
+      - "--seed"
+      - "${TRAINING_SEED:-12345}"
+
+    volumes:
+      - ./data:/data
+
+    restart: unless-stopped
+    cpus: ${TRAINING_CPUS:-3.5}
+    stop_grace_period: 30s
+
+  training:
+    build:
+      context: .
+      dockerfile: Dockerfile.training
+
+    command:
+      - "model/train_model.py"
+      - "--training-file"
+      - "/data/training_positions.txt"
+      - "--output"
+      - "/data/eval.onnx"
+      - "--epochs"
+      - "${TRAINING_EPOCHS:-20000}"
+      - "--learning-rate"
+      - "${TRAINING_LEARNING_RATE:-0.001}"
+      - "--device"
+      - "cpu"
+
+    volumes:
+      - ./data:/data
+
+    restart: unless-stopped
+    cpus: ${TRAINING_CPUS:-3.5}
+    stop_grace_period: 30s

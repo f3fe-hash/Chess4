@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+
+import argparse
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -9,8 +14,6 @@ from nnmodel import EvalNet
 # Configuration
 # ============================================================
 
-TRAINING_FILE = "training_positions.txt"
-
 INPUT_SIZE = 13 * 64
 
 
@@ -20,7 +23,7 @@ INPUT_SIZE = 13 * 64
 
 # Each piece gets its own plane.
 #
-#   0  = empty
+#   0  = unused / empty plane
 #   1  = white pawn
 #   2  = white knight
 #   3  = white bishop
@@ -33,7 +36,11 @@ INPUT_SIZE = 13 * 64
 #   10 = black rook
 #   11 = black queen
 #   12 = black king
-
+#
+# The input therefore contains 13 * 64 values.
+#
+# Plane 0 is intentionally unused, matching the existing
+# encoding scheme.
 
 PIECE_TO_PLANE = {
     "P": 1,
@@ -79,44 +86,53 @@ def load_positions(path):
     inputs = []
     evaluations = []
 
-    with open(path, "r", encoding="utf-8") as file:
-        for line_number, line in enumerate(file, start=1):
+    with open(
+        path,
+        "r",
+        encoding="utf-8",
+    ) as file:
+
+        for line_number, line in enumerate(
+            file,
+            start=1,
+        ):
             line = line.strip()
 
             if not line:
                 continue
 
-            if not line.startswith("[") or not line.endswith("]"):
+            if (
+                not line.startswith("[")
+                or not line.endswith("]")
+            ):
                 print(
-                    f"Warning: invalid line {line_number}: {line}"
+                    f"Warning: invalid line "
+                    f"{line_number}: {line}"
                 )
                 continue
 
-            # Remove [ and ].
             content = line[1:-1]
 
             fields = content.split()
 
-            # FEN has six fields:
-            #
-            #   piece placement
-            #   side to move
-            #   castling
-            #   en passant
-            #   halfmove clock
-            #   fullmove number
-            #
-            # followed by evaluation.
+            # FEN contains six fields followed by
+            # the evaluation.
             if len(fields) != 7:
                 print(
-                    f"Warning: invalid line {line_number}: {line}"
+                    f"Warning: invalid line "
+                    f"{line_number}: {line}"
                 )
                 continue
 
-            fen = " ".join(fields[:6])
+            fen = " ".join(
+                fields[:6]
+            )
 
             try:
-                evaluation = float(fields[6])
+                evaluation = float(
+                    fields[6]
+                )
+
             except ValueError:
                 print(
                     f"Warning: invalid evaluation "
@@ -125,7 +141,7 @@ def load_positions(path):
                 continue
 
             # ------------------------------------------------
-            # FEN piece-placement field
+            # FEN piece-placement field.
             # ------------------------------------------------
 
             board = fen.split()[0]
@@ -142,18 +158,20 @@ def load_positions(path):
                 if character == "/":
                     continue
 
-                # A number represents that many empty squares.
+                # A digit represents that many empty squares.
                 if character.isdigit():
                     square += int(character)
                     continue
 
-                # Piece.
-                plane = PIECE_TO_PLANE.get(character)
+                plane = PIECE_TO_PLANE.get(
+                    character
+                )
 
                 if plane is None:
                     print(
-                        f"Warning: unknown piece '{character}' "
-                        f"on line {line_number}"
+                        f"Warning: unknown piece "
+                        f"'{character}' on line "
+                        f"{line_number}"
                     )
                     valid = False
                     break
@@ -167,43 +185,38 @@ def load_positions(path):
                     break
 
                 # ------------------------------------------------
-                # Convert board square to Chess4 square indexing.
+                # Convert FEN square indexing to Chess4 indexing.
                 #
-                # FEN starts at A8 and goes down to A1.
+                # FEN:
+                #
+                #   A8 ... H8
+                #   A7 ... H7
+                #   ...
+                #   A1 ... H1
                 #
                 # Chess4:
                 #
-                # A1 = 0
-                # B1 = 1
-                # ...
-                # H1 = 7
-                # A2 = 8
-                # ...
-                # H8 = 56
-                #
-                # FEN index:
-                #
-                # A8 = 0
-                # B8 = 1
-                # ...
-                # A1 = 56
-                #
-                # Therefore:
+                #   A1 = 0
+                #   B1 = 1
+                #   ...
+                #   H1 = 7
+                #   A2 = 8
+                #   ...
+                #   H8 = 63
                 # ------------------------------------------------
 
                 file_index = square % 8
+
                 rank_from_top = square // 8
 
-                rank_from_bottom = 7 - rank_from_top
+                rank_from_bottom = (
+                    7 - rank_from_top
+                )
 
                 chess4_square = (
                     rank_from_bottom * 8
                     + file_index
                 )
-
-                # ------------------------------------------------
-                # Store one-hot piece plane.
-                # ------------------------------------------------
 
                 index = (
                     plane * 64
@@ -224,10 +237,17 @@ def load_positions(path):
                 )
                 continue
 
-            # Avoid mate positions. The search can find that on it's own.
-            if evaluation < 900:
-                inputs.append(encoded)
-                evaluations.append([evaluation])
+            # Avoid mate positions.
+            #
+            # The Stockfish generator represents mate as
+            # approximately +/-1000.
+            if abs(evaluation) >= 900.0:
+                continue
+
+            inputs.append(encoded)
+            evaluations.append(
+                [evaluation]
+            )
 
     X = torch.tensor(
         inputs,
@@ -243,93 +263,117 @@ def load_positions(path):
 
 
 # ============================================================
-# Load dataset
-# ============================================================
-
-print(f"Loading training data: {TRAINING_FILE}")
-
-X, Y = load_positions(TRAINING_FILE)
-
-print(f"Positions: {len(X):,}")
-print(f"Input size: {X.shape[1]}")
-print(f"Expected: {INPUT_SIZE}")
-print(f"Evaluation shape: {Y.shape}")
-
-if len(X) == 0:
-    raise RuntimeError(
-        "No valid training positions were loaded."
-    )
-
-
-# ============================================================
-# Create model
-# ============================================================
-
-model = EvalNet()
-
-print()
-print(model)
-
-
-# ============================================================
 # Training
 # ============================================================
 
-# Stockfish evaluation is a continuous value in pawns,
-# so this is a regression problem rather than classification.
+def train_model(
+    X,
+    Y,
+    epochs,
+    learning_rate,
+    device,
+):
+    """
+    Train EvalNet as a regression model.
+    """
 
-loss_function = nn.MSELoss()
+    model = EvalNet().to(device)
 
-optimizer = optim.Adam(
-    model.parameters(),
-    lr=0.001,
-)
+    print()
+    print(model)
 
-
-EPOCHS = 20000
-
-
-for epoch in range(EPOCHS):
-
-    # Forward pass.
-    prediction = model(X)
-
-    # Calculate error.
-    loss = loss_function(
-        prediction,
-        Y,
+    print()
+    print(
+        f"Training device: {device}"
     )
 
-    # Clear old gradients.
-    optimizer.zero_grad()
+    print(
+        f"Epochs:          {epochs:,}"
+    )
 
-    # Calculate gradients.
-    loss.backward()
+    print(
+        f"Learning rate:   {learning_rate}"
+    )
 
-    # Update weights.
-    optimizer.step()
+    # Stockfish evaluation is a continuous value in pawns,
+    # so this is a regression problem.
+    loss_function = nn.MSELoss()
 
-    if epoch % 100 == 0:
-        print(
-            f"Epoch {epoch:4d} "
-            f"Loss {loss.item():.6f}"
+    optimizer = optim.Adam(
+        model.parameters(),
+        lr=learning_rate,
+    )
+
+    X = X.to(device)
+    Y = Y.to(device)
+
+    model.train()
+
+    for epoch in range(epochs):
+
+        # Forward pass.
+        prediction = model(X)
+
+        # Calculate error.
+        loss = loss_function(
+            prediction,
+            Y,
         )
 
+        # Clear old gradients.
+        optimizer.zero_grad()
+
+        # Calculate gradients.
+        loss.backward()
+
+        # Update weights.
+        optimizer.step()
+
+        if (
+            epoch == 0
+            or epoch % 100 == 0
+            or epoch == epochs - 1
+        ):
+            print(
+                f"Epoch {epoch:6d} "
+                f"Loss {loss.item():.6f}",
+                flush=True,
+            )
+
+    return model
+
 
 # ============================================================
-# Test the trained model
+# Test model
 # ============================================================
 
-print("\nTraining results:")
+def test_model(
+    model,
+    X,
+    Y,
+    device,
+):
+    """
+    Print predictions for the first ten positions.
+    """
 
-model.eval()
+    print()
+    print(
+        "Training results:"
+    )
 
-with torch.no_grad():
+    model.eval()
 
-    predictions = model(X)
+    X = X.to(device)
+    Y = Y.to(device)
 
-    # Show the first 10 positions.
-    count = min(10, len(X))
+    with torch.no_grad():
+        predictions = model(X)
+
+    count = min(
+        10,
+        len(X),
+    )
 
     for i in range(count):
         actual = Y[i].item()
@@ -343,17 +387,226 @@ with torch.no_grad():
 
 
 # ============================================================
-# Export to ONNX
+# ONNX export
 # ============================================================
 
-torch.onnx.export(
+def export_onnx(
     model,
-    torch.randn(1, 832),
-    "model/eval.onnx",
-    input_names=["input"],
-    output_names=["output"],
-    dynamo=True
-)
+    output_path,
+    device,
+):
+    """
+    Export EvalNet to ONNX.
+    """
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    model.eval()
+
+    dummy_input = torch.randn(
+        1,
+        INPUT_SIZE,
+        device=device,
+    )
+
+    print()
+    print(
+        f"Exporting ONNX model to: "
+        f"{output_path}"
+    )
+
+    torch.onnx.export(
+        model,
+        dummy_input,
+        str(output_path),
+        input_names=["input"],
+        output_names=["output"],
+        dynamo=True,
+    )
+
+    print(
+        f"Saved: {output_path}"
+    )
 
 
-print("\nSaved eval.onnx")
+# ============================================================
+# Main
+# ============================================================
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Train Chess4 EvalNet from Stockfish "
+            "training positions."
+        )
+    )
+
+    parser.add_argument(
+        "--training-file",
+        type=Path,
+        default=Path(
+            "/data/training_positions.txt"
+        ),
+        help="Training-position file",
+    )
+
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path(
+            "/app/model/eval.onnx"
+        ),
+        help="Output ONNX model",
+    )
+
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=20000,
+        help="Number of training epochs",
+    )
+
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=0.001,
+        help="Adam learning rate",
+    )
+
+    parser.add_argument(
+        "--device",
+        default="cpu",
+        choices=["cpu"],
+        help="Training device",
+    )
+
+    args = parser.parse_args()
+
+    # --------------------------------------------------------
+    # Validate.
+    # --------------------------------------------------------
+
+    if not args.training_file.exists():
+        raise FileNotFoundError(
+            f"Training file does not exist: "
+            f"{args.training_file}"
+        )
+
+    if args.epochs <= 0:
+        raise ValueError(
+            "--epochs must be greater than zero"
+        )
+
+    if args.learning_rate <= 0:
+        raise ValueError(
+            "--learning-rate must be greater than zero"
+        )
+
+    # --------------------------------------------------------
+    # Device.
+    # --------------------------------------------------------
+
+    device = torch.device(
+        args.device
+    )
+
+    print(
+        f"Using device: {device}"
+    )
+
+    # --------------------------------------------------------
+    # Load dataset.
+    # --------------------------------------------------------
+
+    print()
+    print(
+        f"Loading training data: "
+        f"{args.training_file}"
+    )
+
+    X, Y = load_positions(
+        args.training_file
+    )
+
+    print(
+        f"Positions:       {len(X):,}"
+    )
+
+    if len(X) == 0:
+        raise RuntimeError(
+            "No valid training positions were loaded."
+        )
+
+    if X.ndim != 2:
+        raise RuntimeError(
+            f"Unexpected input dimensions: "
+            f"{X.shape}"
+        )
+
+    if X.shape[1] != INPUT_SIZE:
+        raise RuntimeError(
+            f"Unexpected input size: "
+            f"{X.shape[1]} "
+            f"(expected {INPUT_SIZE})"
+        )
+
+    print(
+        f"Input size:      {X.shape[1]}"
+    )
+
+    print(
+        f"Expected:        {INPUT_SIZE}"
+    )
+
+    print(
+        f"Evaluation shape: {Y.shape}"
+    )
+
+    # --------------------------------------------------------
+    # Train.
+    # --------------------------------------------------------
+
+    model = train_model(
+        X,
+        Y,
+        args.epochs,
+        args.learning_rate,
+        device,
+    )
+
+    # --------------------------------------------------------
+    # Test.
+    # --------------------------------------------------------
+
+    test_model(
+        model,
+        X,
+        Y,
+        device,
+    )
+
+    # --------------------------------------------------------
+    # Export.
+    # --------------------------------------------------------
+
+    export_onnx(
+        model,
+        args.output,
+        device,
+    )
+
+    print()
+    print(
+        "Training complete."
+    )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(
+        main()
+    )

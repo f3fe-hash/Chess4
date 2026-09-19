@@ -1272,6 +1272,7 @@ Evaluation ChessBot::MainSearch(
     // Move ordering.
     // --------------------------------------------------------
 
+#ifndef ORDER_MOVES
     Move tt_move{};
     const TranspositionTableEntry move_entry = transposition_table->GetEntry(key, found);
     if (found)
@@ -1279,8 +1280,9 @@ Evaluation ChessBot::MainSearch(
         if (move_entry.move_depth >= depth)
             tt_move = move_entry.best_move;
     }
-
+#else
     move_orderer->OrderMoves(moves, depth, ply);
+#endif
 
     Evaluation best_eval;
     Move best_move;
