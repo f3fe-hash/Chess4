@@ -18,61 +18,44 @@
 #endif
 
 #ifdef PGO_TEST
+#include <fstream>
+#include <string>
+#include <vector>
+#include <stdexcept>
+#include <algorithm>
 
-namespace
+constexpr const char* PGO_FEN_FILE = "games.fen";
+
+// How many games to play from the PGO.
+constexpr const std::size_t PLAY_GAMES = 100;
+
+// ms
+constexpr const DurationMs PGO_TIME_LIMIT = DurationMs(100);
+
+std::vector<std::string> LoadPGOPositions()
 {
+    std::ifstream file(PGO_FEN_FILE);
 
-constexpr int PGO_GAMES = 10;
-constexpr DurationMs PGO_TIME_LIMIT(1000);
+    if (!file)
+    {
+        throw std::runtime_error(
+            std::string("Could not open PGO FEN file: ")
+            + PGO_FEN_FILE);
+    }
 
-const char* const PGO_POSITIONS[] =
-{
-    // Starting position
-    "rnbqkbnr/pppppppp/8/8/8/8/"
-    "PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    std::vector<std::string> positions;
+    std::string fen;
 
-    // Sicilian-like position
-    "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/"
-    "PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+    while (std::getline(file, fen))
+    {
+        if (!fen.empty())
+        {
+            positions.push_back(fen);
+        }
+    }
 
-    // French-like position
-    "rnbqkbnr/ppp1pppp/8/3p4/3P4/4P3/"
-    "PPP2PPP/RNBQKBNR w KQkq - 0 2",
-
-    // Queen's Gambit-like position
-    "rnbqkbnr/pp2pppp/8/2pp4/3PP3/8/"
-    "PPP2PPP/RNBQKBNR w KQkq - 0 3",
-
-    // Open center
-    "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/"
-    "PPPP1PPP/RNBQKB1R w KQkq - 2 3",
-
-    // Caro-Kann-like position
-    "rnbqkbnr/pp2pppp/8/2pp4/4P3/2N5/"
-    "PPPP1PPP/R1BQKBNR w KQkq - 1 3",
-
-    // Ruy Lopez-like position
-    "r1bqkbnr/pppp1ppp/2n5/4p3/1b2P3/2N2N2/"
-    "PPPP1PPP/R1BQKB1R w KQkq - 2 4",
-
-    // King's Indian-like position
-    "rnbqk2r/pppp1pbp/5np1/8/2B1P3/2N2N2/"
-    "PPPP1PPP/R1BQ1RK1 w kq - 2 6",
-
-    // Middlegame
-    "r2q1rk1/ppp1bppp/2npbn2/8/2BPP3/2N1BN2/"
-    "PPP2PPP/R2Q1RK1 w - - 4 9",
-
-    // Another middlegame
-    "r1bq1rk1/ppp2ppp/2np1n2/3Np3/3NP3/2N5/"
-    "PPP2PPP/R1BQ1RK1 w - - 4 9"
-};
-
-constexpr std::size_t PGO_POSITION_COUNT =
-    sizeof(PGO_POSITIONS) / sizeof(PGO_POSITIONS[0]);
-
-} // namespace
-
+    return positions;
+}
 #endif
 
 
@@ -120,20 +103,59 @@ int main()
 
 #ifdef PGO_TEST
 
+    std::vector<std::string> pgo_positions;
+
+    try
+    {
+        pgo_positions = LoadPGOPositions();
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr
+            << "PGO ERROR: "
+            << e.what()
+            << '\n';
+
+        return 1;
+    }
+
+    if (pgo_positions.empty())
+    {
+        std::cerr
+            << "PGO ERROR: "
+            << PGO_FEN_FILE
+            << " contains no positions.\n";
+
+        return 1;
+    }
+
+    const std::size_t NUM_GAMES = std::min(pgo_positions.size(), PLAY_GAMES);
+
     std::cout << "Running PGO self-play test...\n";
-    std::cout << "Games: " << PGO_GAMES << '\n';
+    std::cout << "Positions: "
+              << NUM_GAMES
+              << '\n';
+
     std::cout << "Time per move: "
               << PGO_TIME_LIMIT.count()
               << " ms\n\n";
 
-    // The chessboard calculates expensive magic bitboards.
-    // Use one board for the whole match.
-    auto game_board = std::make_shared<ChessBoard>();
+    auto game_board =
+        std::make_shared<ChessBoard>();
 
-    for (int game = 0; game < PGO_GAMES; ++game)
+    int white_wins = 0;
+    int black_wins = 0;
+    int draws = 0;
+
+    int white_games = 0;
+    int black_games = 0;
+
+    for (std::size_t game = 0;
+         game < NUM_GAMES;
+         ++game)
     {
-        const char* fen =
-            PGO_POSITIONS[game % PGO_POSITION_COUNT];
+        const std::string& fen =
+            pgo_positions[game];
 
         game_board->LoadFEN(fen);
 
@@ -143,23 +165,35 @@ int main()
         auto black_bot =
             std::make_shared<ChessBot>(game_board);
 
-        white_bot->SetTimeLimit(PGO_TIME_LIMIT);
-        black_bot->SetTimeLimit(PGO_TIME_LIMIT);
+        white_bot->SetTimeLimit(
+            PGO_TIME_LIMIT);
 
-        Console console(game_board, white_bot);
+        black_bot->SetTimeLimit(
+            PGO_TIME_LIMIT);
 
         /*
-         * Alternate which bot plays which color.
+         * Alternate colors for the starting position.
          *
-         * This isn't strictly necessary for PGO because both
-         * bots use the same code, but it gives the test different
-         * search contexts and makes the games less repetitive.
+         * This is important because the FEN itself determines
+         * whose turn it is, while the bots are otherwise identical.
          */
-        const bool reverse_colors = (game % 2) != 0;
+        const bool reverse_colors =
+            (game % 2) != 0;
+
+        if (reverse_colors)
+        {
+            ++black_games;
+        }
+        else
+        {
+            ++white_games;
+        }
 
         std::cout
-            << "Game " << (game + 1)
-            << "/" << PGO_GAMES
+            << "Game "
+            << (game + 1)
+            << "/"
+            << NUM_GAMES
             << " - "
             << (reverse_colors
                 ? "reversed colors"
@@ -168,15 +202,23 @@ int main()
 
         int move_count = 0;
 
-        while (!(
-            game_board->IsCheckMate()
-            || game_board->IsStaleMate()
-            || game_board->IsThreeFoldRepition()))
+        /*
+         * Safety limit so a pathological position cannot
+         * make the PGO run forever.
+         */
+        constexpr int MAX_GAME_MOVES = 300;
+
+        while (
+            !game_board->IsCheckMate()
+            && !game_board->IsStaleMate()
+            && !game_board->IsThreeFoldRepition()
+            && move_count < MAX_GAME_MOVES)
         {
             MoveResult result;
 
             const bool white_to_move =
-                game_board->GetTurnColor() == TURN_WHITE;
+                game_board->GetTurnColor()
+                == TURN_WHITE;
 
             if (white_to_move)
             {
@@ -197,42 +239,149 @@ int main()
 
 #ifdef DEBUG
             std::cout
-                << "Move " << (move_count + 1)
-                << ": " << result.move.ToStr()
+                << "Move "
+                << move_count
+                << ": "
+                << result.move.ToStr()
                 << '\n'
-                << "FEN: " << game_board->GetFEN()
+                << "FEN: "
+                << game_board->GetFEN()
                 << '\n';
 #endif
         }
 
-        std::cout
-            << "Game " << (game + 1)
-            << " finished after "
-            << move_count
-            << " moves.\n";
-
+        /*
+         * Determine the result from the final board.
+         */
         if (game_board->IsCheckMate())
         {
-            std::cout << "Result: checkmate\n";
+            /*
+             * If it is White's turn in checkmate, Black
+             * made the winning move.
+             */
+            const bool white_won =
+                game_board->GetTurnColor()
+                == TURN_BLACK;
+
+            if (white_won)
+            {
+                ++white_wins;
+                std::cout
+                    << "Result: White wins\n";
+            }
+            else
+            {
+                ++black_wins;
+                std::cout
+                    << "Result: Black wins\n";
+            }
         }
-        else if (game_board->IsStaleMate())
+        else
         {
-            std::cout << "Result: stalemate\n";
+            ++draws;
+
+            if (game_board->IsStaleMate())
+            {
+                std::cout
+                    << "Result: draw (stalemate)\n";
+            }
+            else if (game_board->IsThreeFoldRepition())
+            {
+                std::cout
+                    << "Result: draw (threefold repetition)\n";
+            }
+            else
+            {
+                std::cout
+                    << "Result: draw "
+                    << "(move limit)\n";
+            }
         }
-        else if (game_board->IsThreeFoldRepition())
-        {
-            std::cout << "Result: threefold repetition\n";
-        }
+
+        std::cout
+            << "Game finished after "
+            << move_count
+            << " moves.\n\n";
 
 #ifdef DEBUG
         PrintBotDebug();
+        PrintTTDebug();
+
         ClearBotDebug();
+        ClearTTDebug();
 #endif
 
-        std::cout << '\n';
+        std::cout << "\n\n";
     }
 
-    std::cout << "PGO self-play test complete.\n";
+    /*
+     * Final statistics.
+     */
+    const int decisive_games =
+        white_wins + black_wins;
+
+    const double white_win_rate =
+        white_games > 0
+            ? 100.0 * white_wins / NUM_GAMES
+            : 0.0;
+
+    const double black_win_rate =
+        black_games > 0
+            ? 100.0 * black_wins / NUM_GAMES
+            : 0.0;
+
+    const double draw_rate =
+        pgo_positions.size() > 0
+            ? 100.0 * draws / NUM_GAMES
+            : 0.0;
+
+    std::cout
+        << "========================================\n"
+        << "PGO self-play results\n"
+        << "========================================\n"
+        << "Games:        "
+        << NUM_GAMES
+        << '\n'
+        << "White games:  "
+        << white_games
+        << '\n'
+        << "Black games:  "
+        << black_games
+        << '\n'
+        << "White wins:   "
+        << white_wins
+        << '\n'
+        << "Black wins:   "
+        << black_wins
+        << '\n'
+        << "Draws:        "
+        << draws
+        << '\n'
+        << '\n'
+        << "White win %:  "
+        << white_win_rate
+        << "%\n"
+        << "Black win %:  "
+        << black_win_rate
+        << "%\n"
+        << "Draw %:       "
+        << draw_rate
+        << "%\n";
+
+    if (decisive_games > 0)
+    {
+        std::cout
+            << '\n'
+            << "White wins / Black wins: "
+            << white_wins
+            << " / "
+            << black_wins
+            << '\n';
+    }
+
+    std::cout
+        << "========================================\n"
+        << "PGO self-play test complete.\n";
 
 #endif
 

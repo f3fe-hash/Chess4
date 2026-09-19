@@ -91,7 +91,9 @@
 #define PIECE_COLOR_WHITE   0x08
 #define PIECE_COLOR_BLACK   0x10
 
-#define NULL_PIECE  ( PIECE_TYPE_NONE | PIECE_COLOR_NONE )
+#define NULL_PIECE ( PIECE_TYPE_NONE | PIECE_COLOR_NONE )
+
+#define NULL_SQUARE (64)
 
 #define flatten_xy(x, y)        ( ((y) << 3) | (x) )
 #define get_piece_x(square)     ( (square) & 0x07 )
@@ -119,22 +121,22 @@ enum CastlingRights
 
 struct Move
 {
-    Square from;
-    Square to;
+    Square from = NULL_SQUARE;
+    Square to = NULL_SQUARE;
 
-    Piece moved;
-    Piece captured;
+    Piece moved = NULL_PIECE;
+    Piece captured = NULL_PIECE;
 
     // Piece a pawn promotes to. NULL_PIECE for normal moves.
     Piece promotion = NULL_PIECE;
 
-    int8_t flags;
-    CastlingRights prev_castling_rights;
-    Square prev_en_passant;
+    uint8_t flags = MOVE_NORMAL;
+    CastlingRights prev_castling_rights = CASTLE_NONE;
+    Square prev_en_passant = NULL_SQUARE;
 
     bool IsCapture() const
     {
-        return captured != NULL_PIECE;
+        return (captured != NULL_PIECE) | (flags & MOVE_EN_PASSANT);
     }
 
     bool IsPromotion() const
@@ -149,12 +151,15 @@ struct Move
 
     bool IsNull() const
     {
-        return from == NULL_PIECE;
+        return from == 64;
     }
 
     std::string ToStr() const
     {
-        char buff[5] = {0, 0, 0, 0, 0};
+        if (IsNull())
+            return "0000";
+        
+        char buff[5] = {};
 
         buff[0] = get_piece_x(from) + 'a';
         buff[1] = get_piece_y(from) + '1';
@@ -168,9 +173,9 @@ struct Move
     {
         return from == other.from &&
             to == other.to &&
-            (!moved || !other.moved || moved == other.moved) &&
-            (!captured || !other.captured || captured == other.captured) &&
-            (!promotion || !other.promotion || promotion == other.promotion);
+            moved == other.moved &&
+            captured == other.captured &&
+            promotion == other.promotion;
     }
 };
 

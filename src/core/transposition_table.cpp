@@ -1,6 +1,101 @@
 #include "core/transposition_table.hpp"
 
 
+#ifdef DEBUG
+TTDebugData tt_debug{};
+
+void PrintTTDebug()
+{
+#ifdef DEBUG_TT_STATS
+    std::cout << "[TT DEBUG] Total writes: "
+        << tt_debug.tt_writes
+        << std::endl;
+
+    std::cout << "[TT DEBUG] Total reads: "
+        << tt_debug.tt_reads
+        << std::endl;
+
+    std::cout << "[TT DEBUG] Total hit reads: "
+        << tt_debug.tt_valid_reads
+        << std::endl;
+    
+    std::cout << "[TT DEBUG] Total non-hit reads: "
+        << tt_debug.tt_reads - tt_debug.tt_valid_reads
+        << std::endl;
+
+    std::cout << "[TT DEBUG] % of tt lookups are hits: "
+        << std::setprecision(2) << std::fixed
+        << ((float)tt_debug.tt_valid_reads / (float)tt_debug.tt_reads) * 100
+        << std::endl;
+    
+    // Write statistics
+    
+    std::cout << "[TT DEBUG] TT write bound % is exact: "
+        << std::setprecision(2) << std::fixed
+        << ((float)tt_debug.tt_write_bound_exact / (float)tt_debug.tt_writes) * 100
+        << std::endl;
+
+    std::cout << "[TT DEBUG] TT write bound % is lower: "
+        << std::setprecision(2) << std::fixed
+        << ((float)tt_debug.tt_write_bound_lower / (float)tt_debug.tt_writes) * 100
+        << std::endl;
+    
+    std::cout << "[TT DEBUG] TT write bound % is upper: "
+        << std::setprecision(2) << std::fixed
+        << ((float)tt_debug.tt_write_bound_upper / (float)tt_debug.tt_writes) * 100
+        << std::endl;
+    
+
+    // Calculate read statistics
+    float tt_read_bound_none = 0.00;
+    float tt_read_bound_exact = 0.00;
+    float tt_read_bound_lower = 0.00;
+    float tt_read_bound_upper = 0.00;
+    for (const TranspositionTableBound& bound : tt_debug.read_bounds)
+    {
+        switch (bound)
+        {
+            case TranspositionTableBound::EXACT: tt_read_bound_exact++; break;
+            case TranspositionTableBound::LOWER: tt_read_bound_lower++; break;
+            case TranspositionTableBound::UPPER: tt_read_bound_upper++; break;
+            case TranspositionTableBound::NONE:  tt_read_bound_none++; break;
+        }
+    }
+
+    // Print read statistics
+
+    std::cout << "[TT DEBUG] TT read bound % is none: "
+        << std::setprecision(2) << std::fixed
+        << (tt_read_bound_none / tt_debug.tt_valid_reads) * 100
+        << std::endl;
+    
+    std::cout << "[TT DEBUG] TT read bound % is exact: "
+        << std::setprecision(2) << std::fixed
+        << (tt_read_bound_exact / tt_debug.tt_valid_reads) * 100
+        << std::endl;
+
+    std::cout << "[TT DEBUG] TT read bound % is lower: "
+        << std::setprecision(2) << std::fixed
+        << (tt_read_bound_lower / tt_debug.tt_valid_reads) * 100
+        << std::endl;
+    
+    std::cout << "[TT DEBUG] TT read bound % is upper: "
+        << std::setprecision(2) << std::fixed
+        << (tt_read_bound_upper / tt_debug.tt_valid_reads) * 100
+        << std::endl;
+
+#endif
+}
+
+void ClearTTDebug()
+{
+    tt_debug.read_bounds.clear();
+    tt_debug = TTDebugData{};
+}
+
+#endif
+
+
 constexpr TranspositionTable::Bucket& TranspositionTable::GetBucket(const ZobristHash& key)
 {
     const uint64_t bucket_idx = key % BUCKETS;
@@ -34,6 +129,10 @@ void TranspositionTable::Store(
     const ZobristHash& key,
     const TranspositionTableEntry& entry)
 {
+#ifdef DEBUG
+    tt_debug.tt_writes++;
+#endif
+
     Bucket& bucket = GetBucket(key);
 
     const Entry stored_entry = Entry
@@ -88,13 +187,13 @@ void TranspositionTable::Store(
         }
     }
 
-    //if (
-    //    CalculateReplacementScore(entry) <
-    //    CalculateReplacementScore(bucket.entries[replacement_idx].entry)
-    //)
-    //{
-    //    return;
-    //}
+    if (
+        CalculateReplacementScore(entry) <
+        CalculateReplacementScore(bucket.entries[replacement_idx].entry)
+    )
+    {
+        return;
+    }
 
     bucket.entries[replacement_idx] = stored_entry;
 }
@@ -103,6 +202,10 @@ void TranspositionTable::Store(
 TranspositionTableEntry TranspositionTable::Get(
     const ZobristHash& key, bool& found) const
 {
+#ifdef DEBUG
+    tt_debug.tt_reads++;
+#endif
+
     found = false;
     const Bucket& bucket = GetBucket(key);
 
@@ -112,6 +215,11 @@ TranspositionTableEntry TranspositionTable::Get(
         if (tt_entry.is_valid(key))
         {
             found = true;
+
+#ifdef DEBUG
+            tt_debug.tt_valid_reads++;
+#endif
+
             return tt_entry.entry;
         }
     }
@@ -155,7 +263,13 @@ bool TranspositionTable::Contains(const ZobristHash& key) const
 
 TranspositionTableEntry TranspositionTable::GetEntry(const ZobristHash& key, bool& found) const
 {
-    return Get(key, found);
+    const TranspositionTableEntry& entry = Get(key, found);
+
+#ifdef DEBUG
+    tt_debug.read_bounds.push_back(entry.bound);
+#endif
+
+    return entry;
 }
 
 
@@ -215,18 +329,30 @@ void TranspositionTable::SetBound(
 
 void TranspositionTable::SetExact(const ZobristHash& key, const Evaluation& exact_eval, const int& depth)
 {
+#ifdef DEBUG
+    tt_debug.tt_write_bound_exact++;
+#endif
+
     SetBound(key, exact_eval, depth, TranspositionTableBound::EXACT);
 }
 
 
 void TranspositionTable::SetLowerBound(const ZobristHash& key, const Evaluation& lower_eval, const int& depth)
 {
+#ifdef DEBUG
+    tt_debug.tt_write_bound_lower++;
+#endif
+
     SetBound(key, lower_eval, depth, TranspositionTableBound::LOWER);
 }
 
 
 void TranspositionTable::SetUpperBound(const ZobristHash& key, const Evaluation& upper_eval, const int& depth)
 {
+#ifdef DEBUG
+    tt_debug.tt_write_bound_upper++;
+#endif
+
     SetBound(key, upper_eval, depth, TranspositionTableBound::UPPER);
 }
 

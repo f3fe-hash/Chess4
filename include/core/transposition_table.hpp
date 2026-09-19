@@ -1,20 +1,28 @@
 #pragma once
 
 #include <unordered_map>
+#include <cstdint>
+
+#ifdef DEBUG
+#include <iomanip>
+#endif
 
 #include "chess.hpp"
 #include "core/scoring.hpp"
 
 
-inline const int BUCKETS = 65535;
-
 #ifdef RELEASE
-// In release mode, it is often playing many many games,
-// with the same transposition table. Give it more entries.
-inline const int BUCKET_ENTRIES = 32;
+// We don't really want to replace many
+// entries in release mode, as it is expensive.
+inline const int BUCKET_ENTRIES = 16;
+
+// More buckets in release mode
+inline const int BUCKETS = 131072;
 #else
 // For debug, use smaller bucket sizes.
 inline const int BUCKET_ENTRIES = 8;
+
+inline const int BUCKETS = 65535;
 #endif
 
 
@@ -32,6 +40,30 @@ enum class TranspositionTableBound
     // We have found an UPPER bound for the evaluation (at this depth)
     UPPER,
 };
+
+
+#ifdef DEBUG
+
+#define DEBUG_TT_STATS
+
+struct TTDebugData
+{
+#ifdef DEBUG_TT_STATS
+    // Write bound statistics
+    std::uint64_t tt_write_bound_exact;
+    std::uint64_t tt_write_bound_lower;
+    std::uint64_t tt_write_bound_upper;
+
+    std::vector<TranspositionTableBound> read_bounds;
+
+    // Read / write statistics
+    std::uint64_t tt_writes;
+    std::uint64_t tt_reads;
+    std::uint64_t tt_valid_reads;
+#endif
+};
+
+#endif
 
 
 struct TranspositionTableEntry
@@ -114,3 +146,7 @@ public:
     void SetUpperBound  (const ZobristHash& key, const Evaluation& upper_eval, const int& depth);
 };
 
+#ifdef DEBUG
+void PrintTTDebug();
+void ClearTTDebug();
+#endif

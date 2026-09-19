@@ -1,26 +1,22 @@
 #include "core/bot.hpp"
 
-
-
-
-
 #ifdef DEBUG
 BotDebugData bot_debug{};
 
 void PrintBotDebug()
 {
-    std::cout << "[DEBUG] LMR re-searches: "
+    std::cout << "[BOT DEBUG] LMR re-searches: "
         << bot_debug.lmr_research_count
         << std::endl;
     
 #ifdef DEBUG_LMR_RESEARCH
     if (bot_debug.lmr_research_count == 0)
     {
-        std::cout << "[DEBUG] LMR Avg. re-search depth: 0.00" << std::endl;
+        std::cout << "[BOT DEBUG] LMR Avg. re-search depth: 0.00" << std::endl;
     }
     else
     {
-        std::cout << "[DEBUG] LMR Avg. re-search depth: "
+        std::cout << "[BOT DEBUG] LMR Avg. re-search depth: "
             << std::fixed << std::setprecision(2)
             << (float)bot_debug.total_lmr_research_depth / (float)bot_debug.lmr_research_count
             << std::endl;
@@ -28,11 +24,11 @@ void PrintBotDebug()
 
     if (bot_debug.nodes_searched == 0)
     {
-        std::cout << "[DEBUG] average % of moves re-searched: N / A" << std::endl;
+        std::cout << "[BOT DEBUG] average % of moves re-searched: N / A" << std::endl;
     }
     else
     {
-        std::cout << "[DEBUG] average % of moves re-searched: "
+        std::cout << "[BOT DEBUG] average % of moves re-searched: "
             << std::fixed << std::setprecision(2)
             << ((float)bot_debug.lmr_research_count / (float)bot_debug.nodes_searched) * 100
             << std::endl;
@@ -98,6 +94,7 @@ void PrintBotDebug()
 
 void ClearBotDebug()
 {
+    bot_debug.terminations.clear();
     bot_debug = BotDebugData{};
 }
 
@@ -892,7 +889,9 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
     int best_depth = 0;
 
+#ifdef DEBUG
     uint64_t previous_completed_nodes = 0;
+#endif
 
     // --------------------------------------------------------
     // Iterative deepening.
@@ -1034,8 +1033,10 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
             best_move.eval = depth_eval;
 
+#ifdef DEBUG
             const uint64_t completed_nodes =
                 nodes_searched.load(std::memory_order_relaxed);
+#endif
 
             const DurationMs elapsed =
                 std::chrono::duration_cast<DurationMs>(
@@ -1052,9 +1053,9 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                 board->GetZobristHash(),
                 previous_completed_nodes
             );
-#endif
 
             previous_completed_nodes = completed_nodes;
+#endif
         }
         else
         {
@@ -1159,39 +1160,40 @@ Evaluation ChessBot::MainSearch(
     // Checkmate / stalemate.
     // --------------------------------------------------------
 
-    if (moves.empty())
+    if (board->IsCheckMate())
     {
-        if (board->IsCheck())
-        {
-            // Side to move has been checkmated.
-            //
-            // White being mated is bad for white, while black being
-            // mated is good for white. Scores are white-centric.
-            //
-            // The ply adjustment makes the engine prefer:
-            //
-            //     fastest mate
-            //
-            // and avoid:
-            //
-            //     being mated as quickly as possible.
+        // Side to move has been checkmated.
+        //
+        // White being mated is bad for white, while black being
+        // mated is good for white. Scores are white-centric.
+        //
+        // The ply adjustment makes the engine prefer:
+        //
+        //     fastest mate
+        //
+        // and avoid:
+        //
+        //     being mated as quickly as possible.
 
 #ifdef DEBUG_SEARCH_TERMINATION
-                bot_debug.terminations.push_back(SearchTermination::Checkmate);
+            bot_debug.terminations.push_back(SearchTermination::Checkmate);
 #endif
 
-            if (maximizing)
-            {
-                return -CHECKMATE_SCORE + ply;
-            }
-            else
-            {
-                return CHECKMATE_SCORE - ply;
-            }
+        if (maximizing)
+        {
+            return -CHECKMATE_SCORE + ply;
         }
+        else
+        {
+            return CHECKMATE_SCORE - ply;
+        }
+    }
+
+    else if (board->IsStaleMate())
+    {
 
 #ifdef DEBUG_SEARCH_TERMINATION
-            bot_debug.terminations.push_back(SearchTermination::Stalemate);
+        bot_debug.terminations.push_back(SearchTermination::Stalemate);
 #endif
 
         // No legal moves and not in check = stalemate.

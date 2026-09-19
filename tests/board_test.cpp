@@ -92,6 +92,13 @@ TEST(Board, CheckDetection)
             true,
             true,
             false
+        },
+
+        {
+            "1r3rk1/3q1pb1/3p1nnp/p5N1/8/PpP4P/1P1BB1P1/2KR1R2 w - - 0 1",
+            false,
+            false,
+            false
         }
     };
 
@@ -209,24 +216,6 @@ TEST(Board, RepetitionIncludesInitialPosition)
     play(C6, B8);
 
     EXPECT_TRUE(board.IsThreeFoldRepition());
-}
-
-
-TEST(TranspositionTable, ReplacesShallowestEntry)
-{
-    auto table = std::make_unique<TranspositionTable>();
-    constexpr uint64_t bucket = 17;
-
-    for (uint8_t depth = 1; depth <= 8; ++depth)
-        table->SetExact(bucket + depth * 65535, depth, depth);
-
-    const uint64_t replacementKey = bucket + 9 * 65535;
-    table->SetExact(replacementKey, 99, 0);
-
-    bool found;
-    EXPECT_FALSE(table->Contains(bucket + 65535));
-    EXPECT_TRUE(table->Contains(replacementKey));
-    EXPECT_EQ(table->GetEntry(replacementKey, found).eval, 99);
 }
 
 

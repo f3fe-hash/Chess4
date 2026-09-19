@@ -2129,9 +2129,7 @@ std::vector<Move> ChessBoard::GetLegalMoves()
         UndoMove(move);
 
         if (!in_check)
-        {
             moves[write++] = move;
-        }
     }
 
     moves.resize(write);
@@ -2142,6 +2140,9 @@ std::vector<Move> ChessBoard::GetLegalMoves()
 std::vector<Move> ChessBoard::GetLegalCaptures()
 {
     std::vector<Move> moves;
+    if (!HasPseudoLegalCapture())
+        return moves;
+
     moves.reserve(GetNumCaptures());
 
     GetLegalPawnMoves(moves);
@@ -2157,7 +2158,7 @@ std::vector<Move> ChessBoard::GetLegalCaptures()
     {
         Move move = moves[read];
 
-        if (move.captured == NULL_PIECE)
+        if (!move.IsCapture())
             continue;
 
         MakeMove(move);
@@ -2191,9 +2192,7 @@ std::vector<Move> ChessBoard::GetLegalCaptures()
         UndoMove(move);
 
         if (!in_check)
-        {
             moves[write++] = move;
-        }
     }
 
     moves.resize(write);
@@ -2618,4 +2617,5 @@ Bitboard ChessBoard::GetKings() const
         (turn == TURN_WHITE ? PIECE_COLOR_WHITE : PIECE_COLOR_BLACK)
     ];
 }
+
 

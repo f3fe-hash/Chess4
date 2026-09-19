@@ -618,7 +618,7 @@ Evaluation ChessBoardEvaluator::QuiescenceSearch()
     Evaluation alpha = INT_MIN;
     Evaluation beta = INT_MAX;
 
-    return QuiescenceSearchMain(alpha, beta, 10);
+    return QuiescenceSearchMain(alpha, beta, 100);
 }
 
 

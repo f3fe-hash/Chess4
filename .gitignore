@@ -7,3 +7,5 @@ perf/out.*
 perf/perf.*
 
 .env
+
+lichess_db_games.pgn
