@@ -64,6 +64,50 @@ include_directories(include)
 # ncurses
 find_package(Curses REQUIRED)
 
+# ONNX Runtime
+find_path(ONNXRUNTIME_INCLUDE_DIR
+    NAMES onnxruntime_cxx_api.h
+    PATHS
+        /usr/include
+        /usr/include/onnxruntime
+        /usr/local/include
+        $ENV{HOME}/onnxruntime/include
+)
+
+find_library(ONNXRUNTIME_LIBRARY
+    NAMES onnxruntime
+    PATHS
+        /usr/lib
+        /usr/local/lib
+        $ENV{HOME}/onnxruntime/lib
+)
+
+if(NOT ONNXRUNTIME_INCLUDE_DIR)
+    message(FATAL_ERROR
+        "Could not find ONNX Runtime headers (onnxruntime_cxx_api.h)"
+    )
+endif()
+
+if(NOT ONNXRUNTIME_LIBRARY)
+    message(FATAL_ERROR
+        "Could not find ONNX Runtime library (libonnxruntime.so)"
+    )
+endif()
+
+get_filename_component(
+    ONNXRUNTIME_LIBRARY_DIR
+    "${ONNXRUNTIME_LIBRARY}"
+    DIRECTORY
+)
+
+message(STATUS
+    "ONNX Runtime include: ${ONNXRUNTIME_INCLUDE_DIR}"
+)
+
+message(STATUS
+    "ONNX Runtime library: ${ONNXRUNTIME_LIBRARY}"
+)
+
 # ====================
 # PGO
 # ====================
@@ -124,13 +168,31 @@ endif()
 
 add_library(chess STATIC ${SRC_FILES})
 
-target_include_directories(chess PUBLIC include)
+target_include_directories(chess PUBLIC
+    include
+)
 
 # ncurses is required by Console.cpp
+target_include_directories(chess PRIVATE
+    ${CURSES_INCLUDE_DIR}
+)
 
-target_include_directories(chess PRIVATE ${CURSES_INCLUDE_DIR})
+target_link_libraries(chess PRIVATE
+    ${CURSES_LIBRARIES}
+)
 
-target_link_libraries(chess PRIVATE ${CURSES_LIBRARIES})
+# ONNX Runtime
+target_include_directories(chess PUBLIC
+    ${ONNXRUNTIME_INCLUDE_DIR}
+)
+
+target_link_libraries(chess PUBLIC
+    ${ONNXRUNTIME_LIBRARY}
+)
+
+set_target_properties(chess PROPERTIES
+    BUILD_RPATH "${ONNXRUNTIME_LIBRARY_DIR}"
+)
 
 # ====================
 # Chess executable

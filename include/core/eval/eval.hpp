@@ -12,11 +12,21 @@
 #include "core/move_ordering.hpp"
 #include "core/scoring.hpp"
 
+#define USE_EXPR_AI
+
+#ifdef USE_EXPR_AI
+#include "core/eval/model.hpp"
+#endif
+
 class ChessBoardEvaluator
 {
     std::shared_ptr<ChessBoard> board;
     std::shared_ptr<TranspositionTable> transposition_table;
     std::shared_ptr<MoveOrder> move_orderer;
+
+#ifdef USE_EXPR_AI
+    EvalModel model;
+#endif
 
     Square __fix_pst_square(Square square);
 
@@ -40,7 +50,7 @@ class ChessBoardEvaluator
         int depth);
 
 public:
-    ChessBoardEvaluator() {} // default constructor
+    //ChessBoardEvaluator() {} // default constructor
     ChessBoardEvaluator(
         std::shared_ptr<ChessBoard> board,
         std::shared_ptr<TranspositionTable> tt,

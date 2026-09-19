@@ -1,5 +1,4 @@
-#include "core/eval.hpp"
-#include <algorithm>
+#include "core/eval/eval.hpp"
 
 //
 //  Evaluation multipliers
@@ -8,6 +7,7 @@
 const float PIECE_VALUE_MULTIPLIER      = 1; // Keeping pieces safe
 const float PST_EVAL_MULTIPLIER         = 1.5; // Piece positioning
 const float MOP_UP_MULTIPLIER           = 1.2; // Endgames: push king to edges
+const float NN_EVAL_MULTIPLIER          = 0.8; // Don't trust the neural network too much yet.
 
 // Note: captures evaluation are ON TOP of generic moves.
 const float MOBILITY_MULTIPLIER         = 0.9;
@@ -113,7 +113,11 @@ ChessBoardEvaluator::ChessBoardEvaluator(
     std::shared_ptr<MoveOrder> move_orderer
 ) :
     board(board), transposition_table(tt), move_orderer(move_orderer)
-{}
+#ifdef USE_EXPR_AI
+    , model(board)
+#endif
+{
+}
 
 
 ChessBoardEvaluator::~ChessBoardEvaluator()
@@ -481,6 +485,11 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
         base +=
             MOP_UP_MULTIPLIER * ComputeMopupBonus();
     }
+
+    // AI evaluation: Experimental
+#ifdef USE_EXPR_AI
+    base += NN_EVAL_MULTIPLIER * model.Evaluate();
+#endif
 
     return base;
 }

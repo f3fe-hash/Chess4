@@ -54,7 +54,7 @@ extern BotDebugData bot_debug;
 #define ORDER_MOVES
 
 #include "chess.hpp"
-#include "core/eval.hpp"
+#include "core/eval/eval.hpp"
 #include "core/scoring.hpp"
 #include "core/transposition_table.hpp"
 #include "core/killer_table.hpp"
@@ -87,11 +87,6 @@ class ChessBot
         bool is_root_search;
     };
 
-    ChessBoardEvaluator evaluator;
-
-    std::shared_ptr<ChessBoard> board;
-    std::shared_ptr<MoveOrder> move_orderer;
-
     std::atomic<int64_t> time_limit_ms{0};
     std::chrono::steady_clock::time_point search_start;
     bool time_up = false;
@@ -99,11 +94,12 @@ class ChessBot
     std::atomic<bool> worker_time_up{false};
     std::atomic<bool>* external_stop_requested = nullptr;
 
+    std::shared_ptr<ChessBoard> board;
+    bool manager;
     std::shared_ptr<TranspositionTable> transposition_table;
     std::shared_ptr<KillerMoves> killer_moves;
-
-    // MultiThreadManager
-    MultiThreadManager<MoveResult, SearchParams> manager;
+    std::shared_ptr<MoveOrder> move_orderer;
+    ChessBoardEvaluator evaluator;
 
     std::atomic<uint64_t> nodes_searched{0};
 

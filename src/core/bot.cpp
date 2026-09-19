@@ -272,14 +272,27 @@ ChessBot::ChessBot(std::shared_ptr<ChessBoard> board)
 {}
 
 
-ChessBot::ChessBot(std::shared_ptr<ChessBoard> board, bool start_manager)
-    : board(board), manager(start_manager)
+ChessBot::ChessBot(
+    std::shared_ptr<ChessBoard> board,
+    bool start_manager
+)
+    : board(board),
+      manager(start_manager),
+      transposition_table(std::make_shared<TranspositionTable>()),
+      killer_moves(std::make_shared<KillerMoves>()),
+      move_orderer(
+          std::make_shared<MoveOrder>(
+              transposition_table,
+              killer_moves,
+              board
+          )
+      ),
+      evaluator(
+          board,
+          transposition_table,
+          move_orderer
+      )
 {
-    transposition_table = std::make_shared<TranspositionTable>();
-    killer_moves = std::make_shared<KillerMoves>();
-    move_orderer = std::make_shared<MoveOrder>(transposition_table, killer_moves, board);
-
-    evaluator = ChessBoardEvaluator(board, transposition_table, move_orderer);
 }
 
 

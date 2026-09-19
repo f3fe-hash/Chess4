@@ -8,4 +8,4 @@ perf/perf.*
 
 .env
 
-lichess_db_games.pgn
+*/lichess_db_games.pgn
