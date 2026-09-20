@@ -69,15 +69,17 @@ find_path(ONNXRUNTIME_INCLUDE_DIR
     NAMES onnxruntime_cxx_api.h
     PATHS
         /usr/include
-        /usr/include/onnxruntime
         /usr/local/include
         $ENV{HOME}/onnxruntime/include
+    PATH_SUFFIXES
+        onnxruntime
 )
 
 find_library(ONNXRUNTIME_LIBRARY
     NAMES onnxruntime
     PATHS
         /usr/lib
+        /usr/lib/aarch64-linux-gnu
         /usr/local/lib
         $ENV{HOME}/onnxruntime/lib
 )

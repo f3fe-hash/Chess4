@@ -23,18 +23,8 @@ std::size_t GetPlane(Piece piece)
     if (piece == NULL_PIECE)
         return 0;
 
-    constexpr std::uint8_t PIECE_TYPE_MASK = 0x07;
-    constexpr std::uint8_t WHITE_MASK = 0x08;
-    constexpr std::uint8_t BLACK_MASK = 0x10;
-
-    const std::uint8_t value =
-        static_cast<std::uint8_t>(piece);
-
-    const std::uint8_t type =
-        value & PIECE_TYPE_MASK;
-
-    const bool white =
-        (value & WHITE_MASK) != 0;
+    const std::uint8_t type = get_piece_type(piece);
+    const bool white = get_piece_color(piece) == PIECE_COLOR_WHITE;
 
     if (type < 1 || type > 6)
         throw std::runtime_error(
