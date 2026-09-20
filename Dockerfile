@@ -13,9 +13,10 @@ WORKDIR /src
 
 COPY . .
 
-# Make sure the PGO inputs exist.
+# Verify all PGO/model files exist.
 RUN test -f /src/games.fen \
-    && test -f /src/data/eval.onnx
+    && test -f /src/data/eval.onnx \
+    && test -f /src/data/eval.onnx.data
 
 # ============================================================
 # PGO generation
@@ -28,9 +29,7 @@ RUN cmake -S . -B /build \
         -DPGO_MODE=GENERATE \
     && cmake --build /build --target Chess --parallel
 
-# PGO needs:
-#   /src/games.fen
-#   /src/data/eval.onnx
+# games.fen + eval.onnx + eval.onnx.data are available here.
 RUN cd /src && /build/Chess
 
 # ============================================================
@@ -67,8 +66,9 @@ RUN apt-get update \
 
 COPY --from=engine-builder /build/Chess ./Chess
 
-# Required by the running engine's ONNX evaluator.
+# ONNX model + external tensor data.
 COPY data/eval.onnx ./data/eval.onnx
+COPY data/eval.onnx.data ./data/eval.onnx.data
 
 COPY lichess ./lichess
 
