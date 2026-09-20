@@ -13,6 +13,10 @@ WORKDIR /src
 
 COPY . .
 
+# Make sure the PGO inputs exist.
+RUN test -f /src/games.fen \
+    && test -f /src/data/eval.onnx
+
 # ============================================================
 # PGO generation
 # ============================================================
@@ -24,7 +28,10 @@ RUN cmake -S . -B /build \
         -DPGO_MODE=GENERATE \
     && cmake --build /build --target Chess --parallel
 
-RUN /build/Chess
+# PGO needs:
+#   /src/games.fen
+#   /src/data/eval.onnx
+RUN cd /src && /build/Chess
 
 # ============================================================
 # PGO optimized build
@@ -54,11 +61,15 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y \
         python3-pip \
         libncurses6 \
-        libonnxruntime-dev \
+        libonnxruntime1.21 \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m pip install --break-system-packages --no-cache-dir -r requirements.txt
 
 COPY --from=engine-builder /build/Chess ./Chess
+
+# Required by the running engine's ONNX evaluator.
+COPY data/eval.onnx ./data/eval.onnx
+
 COPY lichess ./lichess
 
 EXPOSE 8080
