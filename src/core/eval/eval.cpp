@@ -493,7 +493,7 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
     TOTAL_MULTIPLIERS += NN_EVAL_MULTIPLIER;
 #endif
 
-    constexpr Evaluation ADJUSTMENT = 1.00;
+    constexpr Evaluation ADJUSTMENT = 4.00;
     return (base / TOTAL_MULTIPLIERS) * ADJUSTMENT;
 }
 

@@ -72,7 +72,7 @@ EvalModel::EvalModel(std::shared_ptr<ChessBoard> board)
     ),
       session(
           env,
-          "model/eval.onnx",
+          "data/eval.onnx",
           CreateSessionOptions()
       ),
       memory_info(
