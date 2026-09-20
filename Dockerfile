@@ -1,4 +1,4 @@
-FROM gcc:15-bookworm AS engine-builder
+FROM gcc:15-trixie AS engine-builder
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
@@ -41,7 +41,7 @@ RUN cmake -S . -B /build \
 # Runtime
 # ============================================================
 
-FROM gcc:15-bookworm
+FROM gcc:15-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
