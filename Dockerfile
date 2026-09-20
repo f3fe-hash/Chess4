@@ -4,6 +4,8 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y \
         python3-pip \
         libncurses-dev \
+        libonnx-dev \
+        libonnxruntime-dev \
     && python3 -m pip install --break-system-packages --no-cache-dir cmake \
     && rm -rf /var/lib/apt/lists/*
 
@@ -22,8 +24,6 @@ RUN cmake -S . -B /build \
         -DPGO_MODE=GENERATE \
     && cmake --build /build --target Chess --parallel
 
-# This is cached as long as the source/build configuration
-# above has not changed.
 RUN /build/Chess
 
 # ============================================================
@@ -54,6 +54,7 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y \
         python3-pip \
         libncurses6 \
+        libonnxruntime-dev \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m pip install --break-system-packages --no-cache-dir -r requirements.txt
 
