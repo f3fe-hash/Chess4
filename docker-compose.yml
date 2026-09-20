@@ -41,8 +41,8 @@ services:
       dockerfile: Dockerfile.training
 
     command:
-      - "model/generate_dataset.py"
-      - "/data/lichess.pgn.zst"
+      - "model/dataset_generator.py"
+      - "/data/lichess_db_games.pgn"
       - "--stockfish"
       - "/usr/games/stockfish"
       - "--output"
@@ -50,7 +50,7 @@ services:
       - "--checkpoint"
       - "/data/dataset_checkpoint.json"
       - "--positions"
-      - "${TRAINING_POSITIONS:-10000}"
+      - "${TRAINING_POSITIONS:-500000}"
       - "--depth"
       - "${TRAINING_DEPTH:-16}"
       - "--min-ply"
@@ -71,7 +71,7 @@ services:
     volumes:
       - ./data:/data
 
-    restart: unless-stopped
+    restart: no
     cpus: ${TRAINING_CPUS:-3.5}
     stop_grace_period: 30s
 
@@ -96,6 +96,6 @@ services:
     volumes:
       - ./data:/data
 
-    restart: unless-stopped
+    restart: no
     cpus: ${TRAINING_CPUS:-3.5}
     stop_grace_period: 30s

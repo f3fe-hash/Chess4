@@ -7,7 +7,11 @@
 const float PIECE_VALUE_MULTIPLIER      = 1; // Keeping pieces safe
 const float PST_EVAL_MULTIPLIER         = 1.5; // Piece positioning
 const float MOP_UP_MULTIPLIER           = 1.2; // Endgames: push king to edges
-const float NN_EVAL_MULTIPLIER          = 0.8; // Don't trust the neural network too much yet.
+
+// Don't trust the neural network too much yet.
+// For now, it is an experimental feature, and is not
+// too accurate. Just use it as "guidance"
+const float NN_EVAL_MULTIPLIER          = 0.1;
 
 // Note: captures evaluation are ON TOP of generic moves.
 const float MOBILITY_MULTIPLIER         = 0.9;
@@ -424,6 +428,8 @@ Evaluation ChessBoardEvaluator::EvaluateMobility()
 
 Evaluation ChessBoardEvaluator::EvaluatePosition()
 {
+    Evaluation TOTAL_MULTIPLIERS = PST_EVAL_MULTIPLIER + MOBILITY_MULTIPLIER;
+
     bool turn = board->GetTurnColor();
 
     Evaluation eval_white = 0;
@@ -459,9 +465,6 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
     eval_white += PST_EVAL_MULTIPLIER       * EvaluatePSTs();
     eval_white += MOBILITY_MULTIPLIER       * EvaluateMobility();
 
-    if (board->IsCheck())
-        eval_white -= 100;
-
     // ------------------------------------------------------------
     // Black evaluation.
     // ------------------------------------------------------------
@@ -470,9 +473,6 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
 
     eval_black += PST_EVAL_MULTIPLIER       * EvaluatePSTs();
     eval_black += MOBILITY_MULTIPLIER       * EvaluateMobility();
-
-    if (board->IsCheck())
-        eval_black -= 100;
 
     // Restore original turn.
     board->SetTurnColor(turn);
@@ -484,14 +484,17 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
     {
         base +=
             MOP_UP_MULTIPLIER * ComputeMopupBonus();
+        TOTAL_MULTIPLIERS += MOP_UP_MULTIPLIER;
     }
 
     // AI evaluation: Experimental
 #ifdef USE_EXPR_AI
     base += NN_EVAL_MULTIPLIER * model.Evaluate();
+    TOTAL_MULTIPLIERS += NN_EVAL_MULTIPLIER;
 #endif
 
-    return base;
+    constexpr Evaluation ADJUSTMENT = 1.00;
+    return (base / TOTAL_MULTIPLIERS) * ADJUSTMENT;
 }
 
 

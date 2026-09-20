@@ -4,7 +4,7 @@ import onnxruntime as ort
 
 # Load model
 session = ort.InferenceSession(
-    "xor.onnx",
+    "../data/eval.onnx",
     providers=["CPUExecutionProvider"]
 )
 

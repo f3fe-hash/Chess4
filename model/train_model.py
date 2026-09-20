@@ -448,7 +448,7 @@ def main():
         "--training-file",
         type=Path,
         default=Path(
-            "/data/training_positions.txt"
+            "./data/training_positions.txt"
         ),
         help="Training-position file",
     )
