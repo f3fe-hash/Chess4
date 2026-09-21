@@ -740,6 +740,18 @@ std::string UCI::TakeOutput()
 }
 
 
+std::string UCI::Evaluate()
+{
+    std::lock_guard<std::mutex> lock(board_mutex);
+
+    Evaluation raw_eval = bot->EvaluateRaw();
+
+    return "info score cp " +
+           std::to_string(static_cast<int>(raw_eval)) +
+           "\n";
+}
+
+
 std::string UCI::Respond(
     const std::string& request)
 {
@@ -778,6 +790,9 @@ std::string UCI::Respond(
 
     else if (command == "ponderhit")
         return HandlePonderHit();
+    
+    else if (command == "eval")
+        return Evaluate();
 
     if (command == "debug")
         return "";

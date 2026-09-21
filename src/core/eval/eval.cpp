@@ -8,11 +8,6 @@ const float PIECE_VALUE_MULTIPLIER      = 1; // Keeping pieces safe
 const float PST_EVAL_MULTIPLIER         = 1.5; // Piece positioning
 const float MOP_UP_MULTIPLIER           = 1.2; // Endgames: push king to edges
 
-// Don't trust the neural network too much yet.
-// For now, it is an experimental feature, and is not
-// too accurate. Just use it as "guidance"
-const float NN_EVAL_MULTIPLIER          = 0.1;
-
 // Note: captures evaluation are ON TOP of generic moves.
 const float MOBILITY_MULTIPLIER         = 0.9;
 const float MOBILITY_MOVE_MULTIPLIER    = 1; // Generic moves don't count for much.
@@ -487,14 +482,15 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
         TOTAL_MULTIPLIERS += MOP_UP_MULTIPLIER;
     }
 
+    constexpr Evaluation ADJUSTMENT = 4.00;
+
     // AI evaluation: Experimental
 #ifdef USE_EXPR_AI
-    base += NN_EVAL_MULTIPLIER * model.Evaluate();
-    TOTAL_MULTIPLIERS += NN_EVAL_MULTIPLIER;
-#endif
-
-    constexpr Evaluation ADJUSTMENT = 4.00;
+    const Evaluation correction = model.Evaluate();
+    return (base / TOTAL_MULTIPLIERS) * ADJUSTMENT + correction;
+#else
     return (base / TOTAL_MULTIPLIERS) * ADJUSTMENT;
+#endif
 }
 
 

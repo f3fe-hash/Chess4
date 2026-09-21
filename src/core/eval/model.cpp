@@ -14,6 +14,11 @@ Ort::SessionOptions CreateSessionOptions()
         GraphOptimizationLevel::ORT_ENABLE_ALL
     );
 
+    // We have a tiny NN. Use 1 thread for the work,
+    // as multiple threads create too much overhead.
+    options.SetIntraOpNumThreads(1);
+    options.SetInterOpNumThreads(1);
+
     return options;
 }
 
@@ -23,33 +28,26 @@ std::size_t GetPlane(Piece piece)
     if (piece == NULL_PIECE)
         return 0;
 
-    const std::uint8_t type = get_piece_type(piece);
-    const bool white = get_piece_color(piece) == PIECE_COLOR_WHITE;
+    const std::uint8_t type =
+        get_piece_type(piece);
 
     if (type < 1 || type > 6)
         throw std::runtime_error(
             "EvalModel: invalid piece type"
         );
 
-    // Planes:
+    // Piece types are already:
     //
-    // 0  empty
-    // 1  white pawn
-    // 2  white knight
-    // 3  white bishop
-    // 4  white rook
-    // 5  white queen
-    // 6  white king
-    // 7  black pawn
-    // 8  black knight
-    // 9  black bishop
-    // 10 black rook
-    // 11 black queen
-    // 12 black king
+    // 1 = pawn
+    // 2 = knight
+    // 3 = bishop
+    // 4 = rook
+    // 5 = queen
+    // 6 = king
+    //
+    // Convert to zero-based plane indexing.
 
-    return 1 +
-           (white ? 0 : 6) +
-           (type - 1);
+    return type - 1;
 }
 
 } // namespace
@@ -85,26 +83,34 @@ std::array<float, INPUT_SIZE> EvalModel::GetBoard() const
         const Piece piece =
             board->GetPieceAt(square);
 
+        if (piece == NULL_PIECE)
+            continue;
+
         const std::size_t plane =
             GetPlane(piece);
+
+        const bool white =
+            get_piece_color(piece) ==
+            PIECE_COLOR_WHITE;
+
+        const float value =
+            white ? 1.0f : -1.0f;
 
         output[
             plane * 64 +
             static_cast<std::size_t>(square)
-        ] = 1.0f;
+        ] = value;
     }
 
     return output;
 }
 
 
-Ort::Value EvalModel::CreateTensor(
-    std::array<float, INPUT_SIZE>& data
-)
+Ort::Value EvalModel::CreateTensor(const std::array<float, INPUT_SIZE>& data) const
 {
     return Ort::Value::CreateTensor<float>(
         memory_info,
-        data.data(),
+        const_cast<float*>(data.data()),
         data.size(),
         INPUT_SHAPE.data(),
         INPUT_SHAPE.size()

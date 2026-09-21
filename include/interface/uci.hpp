@@ -100,6 +100,8 @@ class UCI
     // Find the actual legal engine move corresponding to UCI notation.
     bool FindLegalMove(const std::string& string, Move& move);
 
+    std::string Evaluate();
+
     // ------------------------------------------------------------
     // Utility
     // ------------------------------------------------------------

@@ -9,7 +9,7 @@
 #include "chess.hpp"
 #include "core/scoring.hpp"
 
-constexpr std::size_t INPUT_SIZE = 13 * 64;
+constexpr std::size_t INPUT_SIZE = 6 * 64;
 
 class EvalModel
 {
@@ -25,14 +25,12 @@ private:
         static_cast<int64_t>(INPUT_SIZE)
     };
 
-    const char* input_names[1] = {"input"};
-    const char* output_names[1] = {"output"};
+    static constexpr const char* input_names[1] = {"input"};
+    static constexpr const char* output_names[1] = {"output"};
 
     std::array<float, INPUT_SIZE> GetBoard() const;
 
-    Ort::Value CreateTensor(
-        std::array<float, INPUT_SIZE>& data
-    );
+    Ort::Value CreateTensor(const std::array<float, INPUT_SIZE>& data) const;
 
 public:
     explicit EvalModel(std::shared_ptr<ChessBoard> board);

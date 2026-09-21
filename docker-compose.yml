@@ -83,7 +83,7 @@ services:
     command:
       - "model/train_model.py"
       - "--training-file"
-      - "/data/training_positions.txt"
+      - "/data/training_positions_fixed.txt"
       - "--output"
       - "/data/eval.onnx"
       - "--epochs"

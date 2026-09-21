@@ -14,48 +14,79 @@ from nnmodel import EvalNet
 # Configuration
 # ============================================================
 
-INPUT_SIZE = 13 * 64
+INPUT_SIZE = 6 * 64
 
 
 # ============================================================
 # Piece encoding
 # ============================================================
 
-# Each piece gets its own plane.
+# Each piece type gets its own plane.
 #
-#   0  = unused / empty plane
-#   1  = white pawn
-#   2  = white knight
-#   3  = white bishop
-#   4  = white rook
-#   5  = white queen
-#   6  = white king
-#   7  = black pawn
-#   8  = black knight
-#   9  = black bishop
-#   10 = black rook
-#   11 = black queen
-#   12 = black king
+#   0 = empty / unused
 #
-# The input therefore contains 13 * 64 values.
+#   1 = pawn
+#   2 = knight
+#   3 = bishop
+#   4 = rook
+#   5 = queen
+#   6 = king
 #
-# Plane 0 is intentionally unused, matching the existing
-# encoding scheme.
+# Within each piece plane:
+#
+#   +1 = white piece
+#   -1 = black piece
+#
+# The input therefore contains 7 * 64 values.
+#
+# Plane 0 is intentionally unused for pieces and remains zero.
+# It is retained so the plane numbers correspond directly to
+# the piece type:
+#
+#   plane 0 = empty
+#   plane 1 = pawn
+#   plane 2 = knight
+#   plane 3 = bishop
+#   plane 4 = rook
+#   plane 5 = queen
+#   plane 6 = king
+
+# ============================================================
+# Piece encoding
+# ============================================================
+
+# Each piece type gets its own plane.
+#
+#   0 = pawn
+#   1 = knight
+#   2 = bishop
+#   3 = rook
+#   4 = queen
+#   5 = king
+#
+# Within each plane:
+#
+#   +1 = white piece
+#   -1 = black piece
+#
+# Empty squares are 0.
+#
+# The input therefore contains 6 * 64 values.
 
 PIECE_TO_PLANE = {
-    "P": 1,
-    "N": 2,
-    "B": 3,
-    "R": 4,
-    "Q": 5,
-    "K": 6,
+    "P": 0,
+    "N": 1,
+    "B": 2,
+    "R": 3,
+    "Q": 4,
+    "K": 5,
 
-    "p": 7,
-    "n": 8,
-    "b": 9,
-    "r": 10,
-    "q": 11,
-    "k": 12,
+    "p": 0,
+    "n": 1,
+    "b": 2,
+    "r": 3,
+    "q": 4,
+    "k": 5,
 }
 
 
@@ -146,7 +177,7 @@ def load_positions(path):
 
             board = fen.split()[0]
 
-            # 13 planes × 64 squares.
+            # One value for each piece plane and square.
             encoded = [0.0] * INPUT_SIZE
 
             square = 0
@@ -186,23 +217,6 @@ def load_positions(path):
 
                 # ------------------------------------------------
                 # Convert FEN square indexing to Chess4 indexing.
-                #
-                # FEN:
-                #
-                #   A8 ... H8
-                #   A7 ... H7
-                #   ...
-                #   A1 ... H1
-                #
-                # Chess4:
-                #
-                #   A1 = 0
-                #   B1 = 1
-                #   ...
-                #   H1 = 7
-                #   A2 = 8
-                #   ...
-                #   H8 = 63
                 # ------------------------------------------------
 
                 file_index = square % 8
@@ -218,12 +232,20 @@ def load_positions(path):
                     + file_index
                 )
 
+                # White = +1
+                # Black = -1
+                value = (
+                    1.0
+                    if character.isupper()
+                    else -1.0
+                )
+
                 index = (
                     plane * 64
                     + chess4_square
                 )
 
-                encoded[index] = 1.0
+                encoded[index] = value
 
                 square += 1
 
