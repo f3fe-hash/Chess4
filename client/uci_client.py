@@ -1,5 +1,6 @@
 import socket
 import threading
+import math
 
 from config import ENGINE_MOVE_TIME_MS
 
@@ -170,13 +171,23 @@ class UCIClient:
     # --------------------------------------------------------
 
     def go(self, wtime_ms, btime_ms, increment_ms):
-        return self.send(
-            "go "
-            f"wtime {max(0, int(wtime_ms))} "
-            f"btime {max(0, int(btime_ms))} "
-            f"winc {max(0, int(increment_ms))} "
-            f"binc {max(0, int(increment_ms))}"
+        command = "go"
+
+        # Unlimited time control: omit all clock-related UCI parameters.
+        is_unlimited = any(
+            value is None or value == math.inf
+            for value in (wtime_ms, btime_ms, increment_ms)
         )
+
+        if not is_unlimited:
+            command += (
+                f" wtime {max(0, int(wtime_ms))}"
+                f" btime {max(0, int(btime_ms))}"
+                f" winc {max(0, int(increment_ms))}"
+                f" binc {max(0, int(increment_ms))}"
+            )
+
+        return self.send(command)
 
     def stop(self):
         return self.send("stop")

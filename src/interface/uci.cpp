@@ -400,7 +400,9 @@ std::string UCI::HandleGo(
     white_increment = DurationMs(0);
     black_increment = DurationMs(0);
 
-    infinite_search = false;
+    // A bare "go" means the same thing as "go infinite".
+    infinite_search =
+        tokens.size() == 1 && tokens[0] == "go";
 
     bool depth_set = false;
     bool movetime_set = false;
@@ -411,7 +413,8 @@ std::string UCI::HandleGo(
     constexpr DurationMs INFINTE_TIME = DurationMs(180 * 60 * 60);
 
     // 10^11 ms = 10^8 sec = 100 million seconds = about 200 weeks = about 4 years
-    constexpr DurationMs INFINITE_TIME_THRESHOLD = DurationMs(100000000000);
+    constexpr DurationMs INFINITE_TIME_THRESHOLD =
+        DurationMs(100000000000);
 
     for (size_t i = 1; i < tokens.size(); ++i)
     {
@@ -459,7 +462,9 @@ std::string UCI::HandleGo(
         {
             if (tokens[tok_idx] == "infinite")
                 infinite_search = true;
-            
+            else
+                infinite_search = false;
+
             white_time = DurationMs(
                 std::max(
                     std::int64_t(0),
@@ -475,7 +480,9 @@ std::string UCI::HandleGo(
         {
             if (tokens[tok_idx] == "infinite")
                 infinite_search = true;
-            
+            else
+                infinite_search = false;
+
             black_time = DurationMs(
                 std::max(
                     std::int64_t(0),
@@ -504,7 +511,7 @@ std::string UCI::HandleGo(
         {
             if (tokens[tok_idx] == "infinite")
                 infinite_search = true;
-            
+
             black_increment = DurationMs(
                 std::max(
                     std::int64_t(0),
@@ -543,7 +550,7 @@ std::string UCI::HandleGo(
     if (!movetime_set &&
         !depth_set &&
         !nodes_set &&
-        !infinite_search) 
+        !infinite_search)
     {
         search_time =
             bot->CalculateThinkTime(
@@ -557,14 +564,17 @@ std::string UCI::HandleGo(
 
     if (infinite_search)
     {
-        search_time = INFINTE_TIME;
+        // 20 seconds.
+        search_time = DurationMs(20000);
     }
 
     ponder_search_time = search_time;
+
     if (ponder_search)
         search_time = DurationMs::max();
 
     pondering.store(ponder_search);
+
     StartSearch();
     return "";
 }

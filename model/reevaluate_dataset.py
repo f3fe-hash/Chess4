@@ -1,337 +1,353 @@
-#!/usr/bin/env python3
-
-import argparse
-import re
 import socket
-import sys
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8080
+# ============================================================
+# Configuration
+# ============================================================
 
-ENTRY_RE = re.compile(
-    r"^\[(?P<fen>.+?) (?P<eval>[+-]?\d+(?:\.\d+)?)\]$"
-)
+INPUT_FILE = Path("data/training_positions.txt")
+OUTPUT_FILE = Path("data/training_positions_fixed.txt")
 
-SCORE_RE = re.compile(
-    r"^info\s+score\s+cp\s+(?P<score>-?\d+)"
-)
+UCI_HOST = "127.0.0.1"
+UCI_PORT = 8080
 
-
-def send_line(sock, line):
-    sock.sendall((line + "\n").encode("ascii"))
+PROGRESS_INTERVAL = 1000
 
 
-def read_line(sock, buffer):
-    while b"\n" not in buffer:
-        data = sock.recv(4096)
+# ============================================================
+# FastKat UCI communication
+# ============================================================
 
-        if not data:
-            raise ConnectionError(
-                "UCI server closed the connection"
+class UCIClient:
+    def __init__(self, host, port):
+        self.socket = socket.create_connection((host, port))
+        self.socket.settimeout(None)
+
+        self.reader = self.socket.makefile(
+            "r",
+            encoding="utf-8",
+            newline="\n",
+        )
+
+        self.writer = self.socket.makefile(
+            "w",
+            encoding="utf-8",
+            newline="\n",
+        )
+
+    def send(self, command):
+        self.writer.write(command + "\n")
+        self.writer.flush()
+
+    def read_line(self):
+        line = self.reader.readline()
+
+        if not line:
+            raise RuntimeError(
+                "FastKat UCI server disconnected unexpectedly"
             )
 
-        buffer += data
+        return line.strip()
 
-    line, buffer = buffer.split(b"\n", 1)
+    def wait_for(self, expected):
+        while True:
+            line = self.read_line()
 
-    return (
-        line.decode("utf-8", errors="replace").strip(),
-        buffer,
-    )
+            if line == expected:
+                return
 
+    def close(self):
+        try:
+            self.send("quit")
+        except (BrokenPipeError, OSError):
+            pass
 
-def wait_for(sock, buffer, predicate):
-    while True:
-        line, buffer = read_line(sock, buffer)
+        try:
+            self.writer.close()
+        except OSError:
+            pass
 
-        if predicate(line):
-            return line, buffer
+        try:
+            self.reader.close()
+        except OSError:
+            pass
 
-
-def connect_engine(host, port):
-    print(f"Connecting to {host}:{port}...")
-
-    sock = socket.create_connection(
-        (host, port),
-        timeout=10,
-    )
-
-    # Don't impose a timeout while waiting for commands.
-    sock.settimeout(None)
-
-    buffer = b""
-
-    send_line(sock, "uci")
-
-    _, buffer = wait_for(
-        sock,
-        buffer,
-        lambda line: line == "uciok",
-    )
-
-    send_line(sock, "isready")
-
-    _, buffer = wait_for(
-        sock,
-        buffer,
-        lambda line: line == "readyok",
-    )
-
-    print("Engine ready.")
-
-    return sock, buffer
+        try:
+            self.socket.close()
+        except OSError:
+            pass
 
 
-def evaluate_position(sock, buffer, fen):
+def evaluate_position(client, fen):
     """
-    Set the position and request the engine's raw/static evaluation.
+    Evaluate a position using FastKat.
 
-    Expected UCI output:
-
-        info score cp 123
+    Returns the evaluation in pawns from White's perspective.
     """
 
-    send_line(sock, f"position fen {fen}")
-    send_line(sock, "eval")
+    client.send(f"position fen {fen}")
+    client.send("eval")
 
     while True:
-        line, buffer = read_line(sock, buffer)
+        line = client.read_line()
 
-        match = SCORE_RE.match(line)
+        if line.startswith("info score cp"):
+            parts = line.split()
 
-        if match:
-            score_cp = int(match.group("score"))
-            score = score_cp / 100.0
-
-            return score, buffer
-
-
-def format_eval(value):
-    return f"{value:+.4f}"
+            try:
+                cp_index = parts.index("cp")
+                cp = int(parts[cp_index + 1])
+                return cp / 100.0
+            except (ValueError, IndexError):
+                continue
 
 
-def process_file(
-    input_path,
-    output_path,
-    host,
-    port,
-    progress_interval,
-):
-    total = sum(1 for _ in input_path.open("r"))
+# ============================================================
+# Progress reporting
+# ============================================================
 
-    print(f"Input:     {input_path}")
-    print(f"Output:    {output_path}")
-    print(f"Positions: {total:,}")
+def format_duration(seconds):
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+
+    if seconds < 3600:
+        minutes = int(seconds // 60)
+        remaining_seconds = int(seconds % 60)
+
+        return f"{minutes}m {remaining_seconds}s"
+
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+
+    return f"{hours}h {minutes}m"
+
+
+def print_progress(processed, total, skipped, start_time):
+    elapsed = time.monotonic() - start_time
+
+    if processed > 0:
+        average_time = elapsed / processed
+        remaining = total - processed
+        eta_seconds = remaining * average_time
+    else:
+        average_time = 0
+        eta_seconds = 0
+
+    percentage = (
+        processed / total * 100
+        if total > 0
+        else 0
+    )
+
+    finish_time = (
+        datetime.now()
+        + timedelta(seconds=eta_seconds)
+    )
+
+    print()
+    print("=" * 70)
+    print("Progress")
+    print("=" * 70)
+    print(
+        f"Processed:       {processed:,} / {total:,} "
+        f"({percentage:.2f}%)"
+    )
+    print(f"Skipped:         {skipped:,}")
+    print(f"Elapsed:         {format_duration(elapsed)}")
+    print(f"Average/line:    {average_time:.3f}s")
+    print(f"Remaining:       {total - processed:,}")
+    print(f"Estimated left:  {format_duration(eta_seconds)}")
+    print(
+        f"Estimated done:  "
+        f"{finish_time.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    print("=" * 70)
     print()
 
-    sock, buffer = connect_engine(host, port)
 
-    processed = 0
-    changed = 0
-    skipped = 0
+# ============================================================
+# Dataset processing
+# ============================================================
+
+def process_dataset():
+    if not INPUT_FILE.exists():
+        raise FileNotFoundError(
+            f"Input file not found: {INPUT_FILE}"
+        )
+
+    print(f"Reading dataset: {INPUT_FILE}")
+
+    lines = INPUT_FILE.read_text().splitlines()
+    total = len(lines)
+
+    print(f"Total input lines: {total:,}")
+    print()
+    print(
+        f"Connecting to FastKat UCI server "
+        f"at {UCI_HOST}:{UCI_PORT}..."
+    )
+
+    client = UCIClient(
+        UCI_HOST,
+        UCI_PORT,
+    )
 
     start_time = time.monotonic()
 
-    # Write to a temporary file first.
-    temp_path = output_path.with_suffix(
-        output_path.suffix + ".tmp"
-    )
-
     try:
-        with (
-            input_path.open("r") as input_file,
-            temp_path.open("w") as output_file,
-        ):
-            for line_number, line in enumerate(
-                input_file,
-                start=1,
-            ):
-                stripped = line.strip()
+        # --------------------------------------------------------
+        # UCI initialization
+        # --------------------------------------------------------
 
-                # Preserve blank lines.
-                if not stripped:
-                    output_file.write(line)
-                    continue
+        client.send("uci")
+        client.wait_for("uciok")
 
-                match = ENTRY_RE.match(stripped)
+        client.send("isready")
+        client.wait_for("readyok")
 
-                if not match:
-                    print(
-                        f"\nWARNING: Could not parse line "
-                        f"{line_number}: {stripped}",
-                        file=sys.stderr,
-                    )
+        print("Connected to FastKat.")
+        print()
 
-                    output_file.write(line)
-                    skipped += 1
-                    continue
+        # --------------------------------------------------------
+        # Process positions
+        # --------------------------------------------------------
 
-                fen = match.group("fen")
-                old_eval = float(match.group("eval"))
+        output_lines = []
 
-                try:
-                    new_eval, buffer = evaluate_position(
-                        sock,
-                        buffer,
-                        fen,
-                    )
-                except Exception as exc:
-                    print(
-                        f"\nERROR on position "
-                        f"{line_number}: {exc}",
-                        file=sys.stderr,
-                    )
+        processed = 0
+        skipped = 0
 
-                    print(
-                        f"FEN: {fen}",
-                        file=sys.stderr,
-                    )
+        for index, line in enumerate(lines, 1):
+            line = line.strip()
 
-                    raise
+            if not line:
+                skipped += 1
+                continue
 
-                output_file.write(
-                    f"[{fen} {format_eval(new_eval)}]\n"
+            # Expected format:
+            #
+            # [FEN evaluation]
+
+            if not line.startswith("[") or not line.endswith("]"):
+                print(
+                    f"Skipping malformed line {index}: {line}"
                 )
 
-                processed += 1
+                skipped += 1
+                continue
 
-                if abs(new_eval - old_eval) > 0.00005:
-                    changed += 1
+            content = line[1:-1]
 
-                if (
-                    processed % progress_interval == 0
-                    or processed == total
-                ):
-                    elapsed = time.monotonic() - start_time
+            try:
+                fen, stockfish_eval = content.rsplit(" ", 1)
+                stockfish_eval = float(stockfish_eval)
 
-                    rate = (
-                        processed / elapsed
-                        if elapsed > 0
-                        else 0
-                    )
+            except ValueError:
+                print(
+                    f"Skipping malformed line {index}: {line}"
+                )
 
-                    remaining = (
-                        (total - processed) / rate
-                        if rate > 0
-                        else 0
-                    )
+                skipped += 1
+                continue
 
-                    print(
-                        f"\r{processed:,}/{total:,} "
-                        f"({processed / total * 100:6.2f}%) | "
-                        f"{rate:.1f} pos/s | "
-                        f"ETA {remaining / 60:.1f} min",
-                        end="",
-                        flush=True,
-                    )
+            # ----------------------------------------------------
+            # Get FastKat's evaluation.
+            # ----------------------------------------------------
 
-        # Only replace the destination after the entire
-        # dataset was successfully processed.
-        temp_path.replace(output_path)
+            fastkat_eval = evaluate_position(
+                client,
+                fen,
+            )
 
-    except Exception:
-        # Leave the temporary file around for debugging/
-        # recovery, but don't overwrite the requested output.
-        print(
-            f"\nProcessing failed. Partial output is at:"
-            f"\n  {temp_path}",
-            file=sys.stderr,
+            # ----------------------------------------------------
+            # Residual target:
+            #
+            #     Stockfish - FastKat
+            #
+            # Positive => FastKat underestimated White's position.
+            # Negative => FastKat overestimated White's position.
+            # ----------------------------------------------------
+
+            correction = stockfish_eval - fastkat_eval
+
+            output_lines.append(
+                f"[{fen} {correction:.6f}]"
+            )
+
+            processed += 1
+
+            # ----------------------------------------------------
+            # Per-position logging
+            # ----------------------------------------------------
+
+            print(
+                f"[{index}/{total}] "
+                f"Stockfish: {stockfish_eval:+.2f}  "
+                f"FastKat: {fastkat_eval:+.2f}  "
+                f"Correction: {correction:+.2f}"
+            )
+
+            # ----------------------------------------------------
+            # Progress summary every 1,000 positions
+            # ----------------------------------------------------
+
+            if processed % PROGRESS_INTERVAL == 0:
+                print_progress(
+                    processed,
+                    total,
+                    skipped,
+                    start_time,
+                )
+
+        # --------------------------------------------------------
+        # Write output
+        # --------------------------------------------------------
+
+        OUTPUT_FILE.parent.mkdir(
+            parents=True,
+            exist_ok=True,
         )
-        raise
+
+        OUTPUT_FILE.write_text(
+            "\n".join(output_lines) + "\n"
+        )
+
+        # --------------------------------------------------------
+        # Final statistics
+        # --------------------------------------------------------
+
+        elapsed = time.monotonic() - start_time
+
+        print()
+        print("=" * 70)
+        print("Dataset processing complete")
+        print("=" * 70)
+        print(f"Input lines:      {total:,}")
+        print(f"Processed:        {processed:,}")
+        print(f"Skipped:          {skipped:,}")
+        print(f"Elapsed:          {format_duration(elapsed)}")
+
+        if processed:
+            print(
+                f"Average/position: "
+                f"{elapsed / processed:.3f}s"
+            )
+
+        print()
+        print(f"Wrote {len(output_lines):,} positions to:")
+        print(OUTPUT_FILE)
+        print("=" * 70)
 
     finally:
-        sock.close()
-
-    elapsed = time.monotonic() - start_time
-
-    print()
-    print()
-    print("Done.")
-    print(f"Processed: {processed:,}")
-    print(f"Changed:   {changed:,}")
-    print(f"Skipped:   {skipped:,}")
-    print(f"Time:      {elapsed / 3600:.2f} hours")
-
-    if elapsed > 0:
-        print(
-            f"Rate:      "
-            f"{processed / elapsed:.2f} positions/sec"
-        )
+        client.close()
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description=(
-            "Replace dataset evaluations with "
-            "FastKat's raw UCI 'eval' evaluation."
-        )
-    )
-
-    parser.add_argument(
-        "input",
-        type=Path,
-        help="Existing dataset file",
-    )
-
-    parser.add_argument(
-        "output",
-        type=Path,
-        help="Output dataset file",
-    )
-
-    parser.add_argument(
-        "--host",
-        default=DEFAULT_HOST,
-        help=f"UCI server host "
-             f"(default: {DEFAULT_HOST})",
-    )
-
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=DEFAULT_PORT,
-        help=f"UCI server port "
-             f"(default: {DEFAULT_PORT})",
-    )
-
-    parser.add_argument(
-        "--progress",
-        type=int,
-        default=1000,
-        help=(
-            "Print progress every N positions "
-            "(default: 1000)"
-        ),
-    )
-
-    args = parser.parse_args()
-
-    if not args.input.exists():
-        print(
-            f"ERROR: Input file does not exist: "
-            f"{args.input}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    if args.input.resolve() == args.output.resolve():
-        print(
-            "ERROR: Input and output must be different files.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    process_file(
-        args.input,
-        args.output,
-        args.host,
-        args.port,
-        args.progress,
-    )
-
+# ============================================================
+# Main
+# ============================================================
 
 if __name__ == "__main__":
-    main()
+    process_dataset()

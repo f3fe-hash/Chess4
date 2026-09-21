@@ -12,7 +12,7 @@
 #include "core/move_ordering.hpp"
 #include "core/scoring.hpp"
 
-#define USE_EXPR_AI
+//#define USE_EXPR_AI
 
 #ifdef USE_EXPR_AI
 #include "core/eval/model.hpp"

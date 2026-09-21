@@ -4,6 +4,7 @@ import tkinter.font as tkfont
 from tkinter import messagebox, simpledialog
 from pathlib import Path
 from time import monotonic
+import math
 
 from PIL import Image, ImageTk
 
@@ -388,6 +389,9 @@ class ChessGUI:
 
     @staticmethod
     def format_time(seconds):
+        if seconds == None or seconds == math.inf:
+            return "infinite"
+
         seconds = max(0, int(seconds))
         return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
