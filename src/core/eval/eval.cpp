@@ -482,14 +482,12 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
         TOTAL_MULTIPLIERS += MOP_UP_MULTIPLIER;
     }
 
-    constexpr Evaluation ADJUSTMENT = 4.00;
-
     // AI evaluation: Experimental
 #ifdef USE_EXPR_AI
     const Evaluation correction = model.Evaluate();
-    return (base / TOTAL_MULTIPLIERS) * ADJUSTMENT + correction;
+    return (base / TOTAL_MULTIPLIERS) + correction;
 #else
-    return (base / TOTAL_MULTIPLIERS) * ADJUSTMENT;
+    return (base / TOTAL_MULTIPLIERS);
 #endif
 }
 

@@ -309,6 +309,8 @@ bool ChessBoard::LoadFEN(const std::string& fen)
     castling_rights = CASTLE_NONE;
     en_passant = 64;
     turn = TURN_WHITE;
+    fullmove_number = 0;
+    halfmove_clock = 0;
 
     // Reset/rebuild Zobrist hash.
     zobrist_hash = 0;

@@ -74,6 +74,40 @@ EvalModel::EvalModel(std::shared_ptr<ChessBoard> board)
 }
 
 
+void EvalModel::Store(const ZobristHash& key, const Evaluation eval)
+{
+    Bucket& bucket = buckets[key % NUM_BUCKETS];
+
+    if (bucket.num_entries >= EVAL_ENTRIES)
+        return;
+
+    EvalEntry& entry = bucket.entries[bucket.num_entries++];
+
+    entry.key = key;
+    entry.eval = eval;
+}
+
+
+Evaluation EvalModel::Get(const ZobristHash& key, bool& found)
+{
+    const Bucket& bucket = buckets[key % NUM_BUCKETS];
+
+    for (std::size_t i = 0; i < bucket.num_entries; ++i)
+    {
+        const EvalEntry& entry = bucket.entries[i];
+
+        if (entry.key == key)
+        {
+            found = true;
+            return entry.eval;
+        }
+    }
+
+    found = false;
+    return 0;
+}
+
+
 std::array<float, INPUT_SIZE> EvalModel::GetBoard() const
 {
     std::array<float, INPUT_SIZE> output{};
@@ -110,7 +144,7 @@ Ort::Value EvalModel::CreateTensor(const std::array<float, INPUT_SIZE>& data) co
 {
     return Ort::Value::CreateTensor<float>(
         memory_info,
-        const_cast<float*>(data.data()),
+        const_cast<float *>(data.data()),
         data.size(),
         INPUT_SHAPE.data(),
         INPUT_SHAPE.size()
@@ -120,6 +154,13 @@ Ort::Value EvalModel::CreateTensor(const std::array<float, INPUT_SIZE>& data) co
 
 Evaluation EvalModel::Evaluate()
 {
+    // First, see if it is cached.
+    const ZobristHash key = board->GetZobristHash();
+    bool found = false;
+    Evaluation cached = Get(key, found);
+    if (found)
+        return cached;
+
     auto input_data = GetBoard();
 
     auto input_tensor =
@@ -147,5 +188,11 @@ Evaluation EvalModel::Evaluate()
         output_tensors[0].GetTensorData<float>();
 
     // Output in centipawns
-    return static_cast<Evaluation>(output[0] * 100);
+    const Evaluation cp = static_cast<Evaluation>(output[0] * 100);
+
+    // If it is found, it will immediately return.
+    // This will not write to an already existing entry.   
+    Store(key, cp);
+    
+    return cp;
 }
