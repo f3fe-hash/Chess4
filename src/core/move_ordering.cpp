@@ -62,47 +62,58 @@ Evaluation MoveOrder::MoveOrderScore(
 }
 
 
-void MoveOrder::OrderMoves(std::vector<Move>& moves, const int depth, const int ply) const
+void MoveOrder::OrderMoves(
+    std::vector<Move>& moves,
+    const int depth,
+    const int ply) const
 {
+    const std::size_t move_count = moves.size();
+
+    if (move_count <= 1)
+        return;
+
     Move tt_move{};
 
     const ZobristHash key = board->GetZobristHash();
 
-    bool found;
-    const TranspositionTableEntry entry = transposition_table->GetEntry(key, found);
-    if (found)
-    {
-        if (entry.move_depth >= depth)
-            tt_move = entry.best_move;
-    }
+    bool found = false;
+    const TranspositionTableEntry entry =
+        transposition_table->GetEntry(key, found);
 
-    struct ScoredMove
-    {
-        Evaluation score;
-        Move move;
-    };
+    if (found && entry.move_depth >= depth)
+        tt_move = entry.best_move;
 
-    std::vector<ScoredMove> scored;
-    scored.reserve(moves.size());
+    scored_moves.resize(move_count);
 
-    for (const Move& move : moves)
+    for (std::size_t i = 0; i < move_count; ++i)
     {
-        scored.push_back({
+        const Move& move = moves[i];
+
+        scored_moves[i] = {
             MoveOrderScore(move, tt_move, depth, ply),
             move
-        });
+        };
     }
 
-    std::sort(
-        scored.begin(),
-        scored.end(),
-        [](const ScoredMove& a, const ScoredMove& b)
-        {
-            return a.score > b.score;
-        });
+    // Insertion sort, descending by score.
+    for (std::size_t i = 1; i < move_count; ++i)
+    {
+        const ScoredMove current = scored_moves[i];
 
-    for (size_t i = 0; i < moves.size(); ++i)
-        moves[i] = scored[i].move;
+        std::size_t j = i;
+
+        while (j > 0 &&
+               scored_moves[j - 1].score < current.score)
+        {
+            scored_moves[j] = scored_moves[j - 1];
+            --j;
+        }
+
+        scored_moves[j] = current;
+    }
+
+    for (std::size_t i = 0; i < move_count; ++i)
+        moves[i] = scored_moves[i].move;
 }
 
 

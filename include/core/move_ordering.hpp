@@ -23,6 +23,14 @@ class MoveOrder
         const Move& tt_move,
         const int depth,
         const int ply) const;
+    
+    struct ScoredMove
+    {
+        Evaluation score;
+        Move move;
+    };
+
+    mutable std::vector<ScoredMove> scored_moves;
 
 public:
     MoveOrder() {}
