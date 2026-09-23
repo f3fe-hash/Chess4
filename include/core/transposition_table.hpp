@@ -14,15 +14,15 @@
 #ifdef RELEASE
 // We don't really want to replace many
 // entries in release mode, as it is expensive.
-inline const int BUCKET_ENTRIES = 16;
+inline const int BUCKET_ENTRIES = 32;
 
 // More buckets in release mode
-inline const int BUCKETS = 131072;
+inline const int BUCKETS = 16384;
 #else
 // For debug, use smaller bucket sizes.
-inline const int BUCKET_ENTRIES = 8;
+inline const int BUCKET_ENTRIES = 16;
 
-inline const int BUCKETS = 65535;
+inline const int BUCKETS = 4096;
 #endif
 
 
@@ -45,21 +45,30 @@ enum class TranspositionTableBound
 #ifdef DEBUG
 
 #define DEBUG_TT_STATS
+#define DEBUG_TT_CAPACITY
 
 struct TTDebugData
 {
 #ifdef DEBUG_TT_STATS
     // Write bound statistics
-    std::uint64_t tt_write_bound_exact;
-    std::uint64_t tt_write_bound_lower;
-    std::uint64_t tt_write_bound_upper;
+    std::uint64_t tt_write_bound_exact = 0;
+    std::uint64_t tt_write_bound_lower = 0;
+    std::uint64_t tt_write_bound_upper = 0;
 
-    std::vector<TranspositionTableBound> read_bounds;
+    std::vector<TranspositionTableBound> read_bounds{};
 
     // Read / write statistics
-    std::uint64_t tt_writes;
-    std::uint64_t tt_reads;
-    std::uint64_t tt_valid_reads;
+    std::uint64_t tt_writes = 0;
+    std::uint64_t tt_reads = 0;
+    std::uint64_t tt_valid_reads = 0;
+#endif
+
+#ifdef DEBUG_TT_CAPACITY
+    // Capacity
+    std::uint64_t overwrites = 0;
+    std::uint64_t occupancy = 0;
+    std::uint64_t capacity = 0;
+    std::uint64_t capacityBytes = 0;
 #endif
 };
 
@@ -129,11 +138,11 @@ class TranspositionTable
     void SetBound(const ZobristHash& key, const Evaluation& exact_eval, const int& depth, const TranspositionTableBound& bound);
 
 public:
-    TranspositionTable() = default;
+    TranspositionTable();
     ~TranspositionTable() = default;
     TranspositionTable(const TranspositionTable&) = default; // Copy
 
-    size_t GetNumEntries() const;
+    std::size_t GetNumEntries() const;
 
     bool Contains(const ZobristHash& key) const;
 

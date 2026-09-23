@@ -7,43 +7,44 @@ TTDebugData tt_debug{};
 void PrintTTDebug()
 {
 #ifdef DEBUG_TT_STATS
+
     std::cout << "[TT DEBUG] Total writes: "
         << tt_debug.tt_writes
-        << std::endl;
+        << "\n";
 
     std::cout << "[TT DEBUG] Total reads: "
         << tt_debug.tt_reads
-        << std::endl;
+        << "\n";
 
     std::cout << "[TT DEBUG] Total hit reads: "
         << tt_debug.tt_valid_reads
-        << std::endl;
+        << "\n";
     
     std::cout << "[TT DEBUG] Total non-hit reads: "
         << tt_debug.tt_reads - tt_debug.tt_valid_reads
-        << std::endl;
+        << "\n";
 
     std::cout << "[TT DEBUG] % of tt lookups are hits: "
         << std::setprecision(2) << std::fixed
         << ((float)tt_debug.tt_valid_reads / (float)tt_debug.tt_reads) * 100
-        << std::endl;
+        << "%\n";
     
     // Write statistics
     
     std::cout << "[TT DEBUG] TT write bound % is exact: "
         << std::setprecision(2) << std::fixed
         << ((float)tt_debug.tt_write_bound_exact / (float)tt_debug.tt_writes) * 100
-        << std::endl;
+        << "%\n";
 
     std::cout << "[TT DEBUG] TT write bound % is lower: "
         << std::setprecision(2) << std::fixed
         << ((float)tt_debug.tt_write_bound_lower / (float)tt_debug.tt_writes) * 100
-        << std::endl;
+        << "%\n";
     
     std::cout << "[TT DEBUG] TT write bound % is upper: "
         << std::setprecision(2) << std::fixed
         << ((float)tt_debug.tt_write_bound_upper / (float)tt_debug.tt_writes) * 100
-        << std::endl;
+        << "%\n";
     
 
     // Calculate read statistics
@@ -67,33 +68,67 @@ void PrintTTDebug()
     std::cout << "[TT DEBUG] TT read bound % is none: "
         << std::setprecision(2) << std::fixed
         << (tt_read_bound_none / tt_debug.tt_valid_reads) * 100
-        << std::endl;
+        << "%\n";
     
     std::cout << "[TT DEBUG] TT read bound % is exact: "
         << std::setprecision(2) << std::fixed
         << (tt_read_bound_exact / tt_debug.tt_valid_reads) * 100
-        << std::endl;
+        << "%\n";
 
     std::cout << "[TT DEBUG] TT read bound % is lower: "
         << std::setprecision(2) << std::fixed
         << (tt_read_bound_lower / tt_debug.tt_valid_reads) * 100
-        << std::endl;
+        << "%\n";
     
     std::cout << "[TT DEBUG] TT read bound % is upper: "
         << std::setprecision(2) << std::fixed
         << (tt_read_bound_upper / tt_debug.tt_valid_reads) * 100
-        << std::endl;
+        << "%\n";
+
+#endif
+
+#ifdef DEBUG_TT_CAPACITY
+
+    std::cout << "[TT DEBUG] TT overwrites %: "
+        << std::setprecision(2) << std::fixed
+        << ((float)tt_debug.overwrites / (float)tt_debug.capacity) * 100
+        << "%\n";
+    
+    std::cout << "[TT DEBUG] TT occupancy %: "
+        << std::setprecision(2) << std::fixed
+        << ((float)tt_debug.occupancy / (float)tt_debug.capacity) * 100
+        << "%\n";
+    
+    const float sizeMB = (float)tt_debug.capacityBytes / 1e+6;
+
+    std::cout << "[TT DEBUG] TT capacity MB: "
+        << std::setprecision(2) << std::fixed
+        << sizeMB
+        << "MB\n";
 
 #endif
 }
 
 void ClearTTDebug()
 {
+    const std::size_t capacity = tt_debug.capacity;
+    const std::size_t capacityBytes = tt_debug.capacityBytes;
+
     tt_debug.read_bounds.clear();
     tt_debug = TTDebugData{};
+    tt_debug.capacity = capacity;
+    tt_debug.capacityBytes = capacityBytes;
 }
 
 #endif
+
+TranspositionTable::TranspositionTable()
+{
+#ifdef DEBUG_TT_CAPACITY
+    tt_debug.capacity = BUCKET_ENTRIES * BUCKETS;
+    tt_debug.capacityBytes = BUCKET_ENTRIES * BUCKETS * sizeof(Entry);
+#endif
+}
 
 
 constexpr TranspositionTable::Bucket& TranspositionTable::GetBucket(const ZobristHash& key)
@@ -159,6 +194,11 @@ void TranspositionTable::Store(
             // IMPORTANT:
             // n_entries must NOT change.
             tt_entry = stored_entry;
+    
+#ifdef DEBUG_TT_CAPACITY
+            tt_debug.overwrites++;
+#endif
+
             return;
         }
     }
@@ -171,6 +211,9 @@ void TranspositionTable::Store(
     {
         bucket.entries[bucket.n_entries] = stored_entry;
         ++bucket.n_entries;
+#ifdef DEBUG_TT_CAPACITY
+        tt_debug.occupancy++;
+#endif
         return;
     }
 
