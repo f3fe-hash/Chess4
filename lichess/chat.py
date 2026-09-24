@@ -10,7 +10,7 @@ from groq import Groq
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 MAX_HISTORY_MESSAGES = 12
 MAX_REPLY_LENGTH = 140
-DEFAULT_SYSTEM_MESSAGE_FILE = Path(__file__).with_name("system_message.txt")
+DEFAULT_SYSTEM_MESSAGE_FILE = Path(__file__).with_name("system_message.md")
 
 
 def load_system_message() -> str:

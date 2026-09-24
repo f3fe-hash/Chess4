@@ -1,3 +1,9 @@
+// Only prints a game summary if there is less
+// than MATCH_TEST_NOTIFICATION_MOVES moves in a game.
+#define MATCH_TEST_NOTIFY_LOW_MOVES
+
+#define MATCH_TEST_NOTIFICATION_MOVES 15
+
 #include <iostream>
 
 #include "chess.hpp"
@@ -18,6 +24,7 @@
 #endif
 
 #ifdef PGO_TEST
+
 #include <fstream>
 #include <string>
 #include <vector>
@@ -56,6 +63,7 @@ std::vector<std::string> LoadPGOPositions()
 
     return positions;
 }
+
 #endif
 
 
@@ -75,10 +83,14 @@ int main()
     bot1 = std::make_shared<ChessBot>(board);
 
 #ifdef CONSOLE_APP
+
     Console console(board, bot1);
-    bot1->SetTimeLimit(DurationMs(100));
+
+    bot1->SetTimeLimit(
+        DurationMs(100));
 
     console.run();
+
 #endif
 
 
@@ -87,8 +99,11 @@ int main()
     UCIServer server(
         []()
         {
-            auto board = std::make_shared<ChessBoard>();
-            auto bot = std::make_shared<ChessBot>(board);
+            auto board =
+                std::make_shared<ChessBoard>();
+
+            auto bot =
+                std::make_shared<ChessBot>(board);
 
             return std::make_shared<UCI>(
                 board,
@@ -129,16 +144,23 @@ int main()
         return 1;
     }
 
-    const std::size_t NUM_GAMES = std::min(pgo_positions.size(), PLAY_GAMES);
+    const std::size_t NUM_GAMES =
+        std::min(
+            pgo_positions.size(),
+            PLAY_GAMES);
 
-    std::cout << "Running PGO self-play test...\n";
-    std::cout << "Positions: "
-              << NUM_GAMES
-              << '\n';
+    std::cout
+        << "Running PGO self-play test...\n";
 
-    std::cout << "Time per move: "
-              << PGO_TIME_LIMIT.count()
-              << " ms\n\n";
+    std::cout
+        << "Positions: "
+        << NUM_GAMES
+        << '\n';
+
+    std::cout
+        << "Time per move: "
+        << PGO_TIME_LIMIT.count()
+        << " ms\n\n";
 
     auto game_board =
         std::make_shared<ChessBoard>();
@@ -151,8 +173,8 @@ int main()
     int black_games = 0;
 
     for (std::size_t game = 0;
-         game < NUM_GAMES;
-         ++game)
+        game < NUM_GAMES;
+        ++game)
     {
         const std::string& fen =
             pgo_positions[game];
@@ -160,10 +182,12 @@ int main()
         game_board->LoadFEN(fen);
 
         auto white_bot =
-            std::make_shared<ChessBot>(game_board);
+            std::make_shared<ChessBot>(
+                game_board);
 
         auto black_bot =
-            std::make_shared<ChessBot>(game_board);
+            std::make_shared<ChessBot>(
+                game_board);
 
         white_bot->SetTimeLimit(
             PGO_TIME_LIMIT);
@@ -172,11 +196,11 @@ int main()
             PGO_TIME_LIMIT);
 
         /*
-         * Alternate colors for the starting position.
-         *
-         * This is important because the FEN itself determines
-         * whose turn it is, while the bots are otherwise identical.
-         */
+        * Alternate colors for the starting position.
+        *
+        * This is important because the FEN itself determines
+        * whose turn it is, while the bots are otherwise identical.
+        */
         const bool reverse_colors =
             (game % 2) != 0;
 
@@ -189,23 +213,12 @@ int main()
             ++white_games;
         }
 
-        std::cout
-            << "Game "
-            << (game + 1)
-            << "/"
-            << NUM_GAMES
-            << " - "
-            << (reverse_colors
-                ? "reversed colors"
-                : "normal colors")
-            << '\n';
-
         int move_count = 0;
 
         /*
-         * Safety limit so a pathological position cannot
-         * make the PGO run forever.
-         */
+        * Safety limit so a pathological position cannot
+        * make the PGO run forever.
+        */
         constexpr int MAX_GAME_MOVES = 300;
 
         while (
@@ -236,29 +249,58 @@ int main()
             game_board->MakeMove(result.move);
 
             ++move_count;
-
-#ifdef DEBUG
-            std::cout
-                << "Move "
-                << move_count
-                << ": "
-                << result.move.ToStr()
-                << '\n'
-                << "FEN: "
-                << game_board->GetFEN()
-                << '\n';
-#endif
         }
 
         /*
-         * Determine the result from the final board.
-         */
+        * Only notify about games that finish below the
+        * configured move threshold when the notification
+        * macro is enabled.
+        */
+    #ifdef MATCH_TEST_NOTIFY_LOW_MOVES
+        const bool notify_game =
+            move_count < MATCH_TEST_NOTIFICATION_MOVES;
+    #else
+        constexpr bool notify_game = true;
+    #endif
+
+        /*
+        * Print everything related to this game only when
+        * notification is enabled for this game.
+        */
+        if (notify_game)
+        {
+            std::cout
+                << "Game "
+                << (game + 1)
+                << "/"
+                << NUM_GAMES
+                << " - "
+                << (reverse_colors
+                    ? "reversed colors"
+                    : "normal colors")
+                << '\n';
+        }
+
+        /*
+        * The moves have already been played above.
+        *
+        * DEBUG output needs to happen during the game, so
+        * if DEBUG is enabled and notifications are disabled,
+        * replaying the moves is not possible here.
+        *
+        * Therefore DEBUG move output is handled by storing
+        * the moves below.
+        */
+
+        /*
+        * Determine the result from the final board.
+        */
         if (game_board->IsCheckMate())
         {
             /*
-             * If it is White's turn in checkmate, Black
-             * made the winning move.
-             */
+            * If it is White's turn in checkmate, Black
+            * made the winning move.
+            */
             const bool white_won =
                 game_board->GetTurnColor()
                 == TURN_BLACK;
@@ -266,57 +308,74 @@ int main()
             if (white_won)
             {
                 ++white_wins;
-                std::cout
-                    << "Result: White wins\n";
+
+                if (notify_game)
+                {
+                    std::cout
+                        << "Result: White wins\n";
+                }
             }
             else
             {
                 ++black_wins;
-                std::cout
-                    << "Result: Black wins\n";
+
+                if (notify_game)
+                {
+                    std::cout
+                        << "Result: Black wins\n";
+                }
             }
         }
         else
         {
             ++draws;
 
-            if (game_board->IsStaleMate())
+            if (notify_game)
             {
-                std::cout
-                    << "Result: draw (stalemate)\n";
-            }
-            else if (game_board->IsThreeFoldRepition())
-            {
-                std::cout
-                    << "Result: draw (threefold repetition)\n";
-            }
-            else
-            {
-                std::cout
-                    << "Result: draw "
-                    << "(move limit)\n";
+                if (game_board->IsStaleMate())
+                {
+                    std::cout
+                        << "Result: draw (stalemate)\n";
+                }
+                else if (game_board->IsThreeFoldRepition())
+                {
+                    std::cout
+                        << "Result: draw "
+                        << "(threefold repetition)\n";
+                }
+                else
+                {
+                    std::cout
+                        << "Result: draw "
+                        << "(move limit)\n";
+                }
             }
         }
 
-        std::cout
-            << "Game finished after "
-            << move_count
-            << " moves.\n\n";
+        if (notify_game)
+        {
+            std::cout
+                << "Game finished after "
+                << move_count
+                << " moves.\n\n";
 
-#ifdef DEBUG
-        PrintBotDebug();
-        PrintTTDebug();
+    #ifdef DEBUG
 
-        ClearBotDebug();
-        ClearTTDebug();
-#endif
+            PrintBotDebug();
+            PrintTTDebug();
 
-        std::cout << "\n\n";
+            ClearBotDebug();
+            ClearTTDebug();
+
+    #endif
+
+            std::cout << "\n\n";
+        }
     }
 
     /*
-     * Final statistics.
-     */
+    * Final statistics.
+    */
     const int decisive_games =
         white_wins + black_wins;
 
