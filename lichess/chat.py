@@ -35,23 +35,31 @@ def load_system_message() -> str:
 
 
 class GroqChat:
-	"""Generate concise replies for a single Lichess game's chat."""
+    """Generate concise replies for a single Lichess game's chat."""
 
-	def __init__(self, api_key: str, model: str = GROQ_MODEL):
-		if not api_key:
-			raise ValueError("GROQ_API_KEY is not set")
+    def __init__(self, api_key: str, model: str = GROQ_MODEL):
+        if not api_key:
+            raise ValueError("GROQ_API_KEY is not set")
 
-		self.model = model
-		self.client = Groq(api_key=api_key, timeout=30.0)
+        self.model = model
+        self.client = Groq(api_key=api_key, timeout=30.0)
 
-		self.messages: list[dict[str, str]] = [
-			{
-				"role": "system",
-				"content": load_system_message(),
-			}
-		]
+        self.messages: list[dict[str, str]] = [
+            {
+                "role": "system",
+                "content": load_system_message(),
+            }
+        ]
 
-	def reply(
+    def trim_response_size(self, response: str) -> str:
+        response = " ".join(response.split())
+
+        if len(response) > MAX_REPLY_LENGTH:
+            response = response[:MAX_REPLY_LENGTH].rstrip()
+
+        return response
+		
+    def reply(
 		self,
 		username: str,
 		text: str,
@@ -69,11 +77,11 @@ class GroqChat:
 		legal_moves: Optional[list[str]] = None,
 		recent_moves: Optional[list[str]] = None,
 	) -> str:
-		"""
-		Generate a chat reply using the current chess position.
+        """
+        Generate a chat reply using the current chess position.
 
-		board_fen:
-			Current position in FEN notation.
+        board_fen:
+        	Current position in FEN notation.
 
 		board_ascii:
 			Human-readable ASCII representation of the board.
@@ -110,67 +118,67 @@ class GroqChat:
 			Recent moves in UCI notation.
 		"""
 
-		context_parts: list[str] = []
+        context_parts: list[str] = []
 
-		if bot_color is not None:
-			context_parts.append(f"Bot side: {bot_color}")
+        if bot_color is not None:
+            context_parts.append(f"Bot side: {bot_color}")
 
-		if side_to_move is not None:
-			context_parts.append(f"Side to move: {side_to_move}")
+        if side_to_move is not None:
+            context_parts.append(f"Side to move: {side_to_move}")
 
-		if move_number is not None:
-			context_parts.append(f"Move number: {move_number}")
+        if move_number is not None:
+            context_parts.append(f"Move number: {move_number}")
 
-		if last_move is not None:
-			context_parts.append(f"Last move: {last_move}")
+        if last_move is not None:
+            context_parts.append(f"Last move: {last_move}")
 
-		if evaluation is not None:
-			context_parts.append(
-				f"Engine evaluation: {evaluation}"
-			)
+        if evaluation is not None:
+            context_parts.append(
+                f"Engine evaluation: {evaluation}"
+            )
 
-		if material is not None:
-			context_parts.append(f"Material: {material}")
+        if material is not None:
+            context_parts.append(f"Material: {material}")
 
-		if status is not None:
-			context_parts.append(f"Game status: {status}")
+        if status is not None:
+            context_parts.append(f"Game status: {status}")
 
-		if in_check is not None:
-			context_parts.append(
-				f"Side to move is in check: "
-				f"{'yes' if in_check else 'no'}"
-			)
+        if in_check is not None:
+            context_parts.append(
+                f"Side to move is in check: "
+                f"{'yes' if in_check else 'no'}"
+            )
 
-		if recent_moves:
-			context_parts.append(
-				"Recent moves: " + " ".join(recent_moves)
-			)
+        if recent_moves:
+            context_parts.append(
+                "Recent moves: " + " ".join(recent_moves)
+            )
 
-		if board_fen is not None:
-			context_parts.append(
-				"Current FEN:\n" + board_fen
-			)
+        if board_fen is not None:
+            context_parts.append(
+                "Current FEN:\n" + board_fen
+            )
 
-		if board_ascii is not None:
-			context_parts.append(
+        if board_ascii is not None:
+            context_parts.append(
 				"Current board:\n" + board_ascii
 			)
 
-		if legal_moves:
-			context_parts.append(
+        if legal_moves:
+            context_parts.append(
 				"Legal moves: " + " ".join(legal_moves)
 			)
 
-		context = ""
+        context = ""
 
-		if context_parts:
-			context = (
+        if context_parts:
+            context = (
 				"[CURRENT CHESS POSITION]\n"
 				+ "\n".join(context_parts)
 				+ "\n\n"
 			)
 
-		self.messages.append({
+        self.messages.append({
 			"role": "user",
 			"content": (
 				f"{context}"
@@ -178,34 +186,34 @@ class GroqChat:
 			),
 		})
 
-		completion = self.client.chat.completions.create(
+        completion = self.client.chat.completions.create(
 			model=self.model,
 			messages=self.messages,
 			temperature=0.7,
-			max_completion_tokens=256,
-			reasoning_effort="low",
+			max_completion_tokens=512,
+			reasoning_effort="medium",
 		)
 
-		choices = completion.choices
+        choices = completion.choices
 
-		if not choices:
-			raise RuntimeError("Groq returned no chat choices")
+        if not choices:
+            raise RuntimeError("Groq returned no chat choices")
 
-		reply = choices[0].message.content
+        reply = choices[0].message.content
 
-		if not isinstance(reply, str) or not reply.strip():
-			raise RuntimeError("Groq returned an empty chat reply")
+        if not isinstance(reply, str) or not reply.strip():
+            raise RuntimeError("Groq returned an empty chat reply")
 
-		reply = " ".join(reply.split())[:MAX_REPLY_LENGTH]
+        reply = self.trim_response_size(reply)
 
-		self.messages.append({
+        self.messages.append({
 			"role": "assistant",
 			"content": reply,
 		})
 
-		if len(self.messages) > MAX_HISTORY_MESSAGES + 1:
-			self.messages = [
+        if len(self.messages) > MAX_HISTORY_MESSAGES + 1:
+            self.messages = [
 				self.messages[0]
 			] + self.messages[-MAX_HISTORY_MESSAGES:]
 
-		return reply
+        return reply
