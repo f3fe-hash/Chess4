@@ -6,6 +6,8 @@ RUN apt-get update \
         libncurses-dev \
         libonnx-dev \
         libonnxruntime-dev \
+        libprotobuf-dev \
+        protobuf-compiler \
     && python3 -m pip install --break-system-packages --no-cache-dir cmake \
     && rm -rf /var/lib/apt/lists/*
 
