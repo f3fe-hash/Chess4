@@ -1,4 +1,5 @@
 #include "core/eval/model.hpp"
+#include <onnx/onnx_pb.h>
 
 #include <fstream>
 #include <stdexcept>

@@ -5,8 +5,6 @@
 #include <cstdint>
 #include <memory>
 
-#include <onnx/onnx_pb.h>
-
 #include "chess.hpp"
 #include "core/scoring.hpp"
 
