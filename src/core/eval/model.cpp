@@ -60,7 +60,7 @@ float EvalModel::LeakyReLU(
 }
 
 
-const onnx::TensorProto& EvalModel::FindInitializer(
+const onnx::TensorProto& FindInitializer(
     const onnx::GraphProto& graph,
     const char* name
 )
@@ -78,7 +78,7 @@ const onnx::TensorProto& EvalModel::FindInitializer(
 }
 
 
-void EvalModel::CopyTensor(
+void CopyTensor(
     const onnx::TensorProto& tensor,
     float* destination,
     const std::size_t size

@@ -95,22 +95,11 @@ private:
 
     void LoadModel();
 
-    static const onnx::TensorProto& FindInitializer(
-        const onnx::GraphProto& graph,
-        const char* name
-    );
 
-    static void CopyTensor(
-        const onnx::TensorProto& tensor,
-        float* destination,
-        std::size_t size
-    );
-
-
-    std::array<float, INPUT_SIZE> GetBoard() const;
+    InputArray GetBoard() const;
 
     float Forward(
-        const std::array<float, INPUT_SIZE>& input
+        const InputArray& input
     ) const;
 
 
@@ -134,4 +123,3 @@ public:
 
     Evaluation Evaluate();
 };
-
