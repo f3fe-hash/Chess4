@@ -110,6 +110,49 @@ message(STATUS
     "ONNX Runtime library: ${ONNXRUNTIME_LIBRARY}"
 )
 
+# ONNX
+find_path(ONNX_INCLUDE_DIR
+    NAMES onnx/onnx_pb.h
+    PATHS
+        /usr/local/include
+        /usr/include
+)
+
+find_library(ONNX_LIBRARY
+    NAMES onnx
+    PATHS
+        /usr/local/lib
+        /usr/lib
+        /usr/lib/x86_64-linux-gnu
+)
+
+# Protobuf
+find_package(Protobuf REQUIRED)
+
+if(NOT ONNX_INCLUDE_DIR)
+    message(FATAL_ERROR
+        "Could not find ONNX headers (onnx/onnx_pb.h)"
+    )
+endif()
+
+if(NOT ONNX_LIBRARY)
+    message(FATAL_ERROR
+        "Could not find ONNX library (libonnx.so)"
+    )
+endif()
+
+message(STATUS
+    "ONNX include: ${ONNX_INCLUDE_DIR}"
+)
+
+message(STATUS
+    "ONNX library: ${ONNX_LIBRARY}"
+)
+
+message(STATUS
+    "Protobuf library: ${Protobuf_LIBRARIES}"
+)
+
 # ====================
 # PGO
 # ====================
@@ -190,6 +233,13 @@ target_include_directories(chess PUBLIC
 
 target_link_libraries(chess PUBLIC
     ${ONNXRUNTIME_LIBRARY}
+    ${ONNX_LIBRARY}
+    protobuf::libprotobuf
+)
+
+# ONNX
+target_include_directories(chess PUBLIC
+    ${ONNX_INCLUDE_DIR}
 )
 
 set_target_properties(chess PROPERTIES
@@ -213,6 +263,10 @@ elseif(PGO_MODE STREQUAL "USE")
 endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE chess)
+
+target_compile_definitions(chess PRIVATE
+    ONNX_ML
+)
 
 if(PGO_MODE STREQUAL "GENERATE")
     target_compile_definitions(${PROJECT_NAME} PRIVATE PGO_TEST)

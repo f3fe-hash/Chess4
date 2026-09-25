@@ -37,8 +37,8 @@ TEST(Bot, BlackSearchTakesFreeQueen)
     const MoveResult result = bot.Search(2, 2);
 
     ASSERT_TRUE(board->IsLegalMove(result.move));
-    EXPECT_EQ(result.move.from, D8);
-    EXPECT_EQ(result.move.to, D4);
+    EXPECT_EQ(result.move.from, SQ_D8);
+    EXPECT_EQ(result.move.to, SQ_D4);
     EXPECT_EQ(result.mate_in_ply, -1);
 }
 
@@ -51,14 +51,14 @@ TEST(Bot, BlackFindsMateInOneAndGetsMateScore)
     Move mate_move{};
     for (const Move move : board->GetLegalMoves())
     {
-        if (move.from == E2 && move.to == G2)
+        if (move.from == SQ_E2 && move.to == SQ_G2)
         {
             mate_move = move;
             break;
         }
     }
-    ASSERT_EQ(mate_move.from, E2);
-    ASSERT_EQ(mate_move.to, G2);
+    ASSERT_EQ(mate_move.from, SQ_E2);
+    ASSERT_EQ(mate_move.to, SQ_G2);
     board->MakeMove(mate_move);
     EXPECT_TRUE(board->IsCheckMate());
     board->UndoMove(mate_move);
@@ -69,8 +69,8 @@ TEST(Bot, BlackFindsMateInOneAndGetsMateScore)
     const MoveResult result = bot.Search(1, 1);
 
     ASSERT_TRUE(board->IsLegalMove(result.move));
-    EXPECT_EQ(result.move.from, E2);
-    EXPECT_EQ(result.move.to, G2);
+    EXPECT_EQ(result.move.from, SQ_E2);
+    EXPECT_EQ(result.move.to, SQ_G2);
     EXPECT_EQ(result.mate_in_ply, 1);
     EXPECT_LT(result.eval, -CHECKMATE_SCORE + 10);
 }
@@ -86,7 +86,7 @@ TEST(Bot, DoesNotPlayQueenIntoKingCapture)
     Move queenMove{};
     for (Move move : board->GetLegalMoves())
     {
-        if (move.from == D6 && move.to == H2)
+        if (move.from == SQ_D6 && move.to == SQ_H2)
         {
             queenMove = move;
             break;
@@ -97,9 +97,9 @@ TEST(Bot, DoesNotPlayQueenIntoKingCapture)
     const std::vector<Move> responses = board->GetLegalMoves();
     EXPECT_TRUE(std::any_of(
         responses.begin(), responses.end(),
-        [](const Move& move) { return move.from == G1 && move.to == H2; }));
+        [](const Move& move) { return move.from == SQ_G1 && move.to == SQ_H2; }));
     Move kingCapture = *std::find_if(responses.begin(), responses.end(), [](const Move& move) {
-        return move.from == G1 && move.to == H2;
+        return move.from == SQ_G1 && move.to == SQ_H2;
     });
     board->MakeMove(kingCapture);
     const Evaluation afterCapture = bot.EvaluateRaw();
@@ -110,7 +110,7 @@ TEST(Bot, DoesNotPlayQueenIntoKingCapture)
     {
         const MoveResult result = bot.Search(depth, depth);
         ASSERT_TRUE(board->IsLegalMove(result.move));
-        EXPECT_FALSE(result.move.from == D6 && result.move.to == H2);
+        EXPECT_FALSE(result.move.from == SQ_D6 && result.move.to == SQ_H2);
     }
     EXPECT_GT(afterCapture, -500);
 }

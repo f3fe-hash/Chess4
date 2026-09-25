@@ -128,19 +128,19 @@ TEST(Board, EnPassantAndHashRoundTrip)
     const uint64_t initialHash = board.GetZobristHash();
     const std::vector<Move> moves = board.GetLegalMoves();
     auto move = std::find_if(moves.begin(), moves.end(), [](const Move& candidate) {
-        return candidate.from == E5 && candidate.to == D6 &&
+        return candidate.from == SQ_E5 && candidate.to == SQ_D6 &&
             (candidate.flags & MOVE_EN_PASSANT);
     });
 
     ASSERT_NE(move, moves.end());
     Move enPassantMove = *move;
     board.MakeMove(enPassantMove);
-    EXPECT_EQ(board.GetPieceAt(D5), NULL_PIECE);
-    EXPECT_EQ(board.GetPieceAt(D6), PIECE_TYPE_PAWN | PIECE_COLOR_WHITE);
+    EXPECT_EQ(board.GetPieceAt(SQ_D5), NULL_PIECE);
+    EXPECT_EQ(board.GetPieceAt(SQ_D6), PIECE_TYPE_PAWN | PIECE_COLOR_WHITE);
     board.UndoMove(enPassantMove);
 
-    EXPECT_EQ(board.GetPieceAt(E5), PIECE_TYPE_PAWN | PIECE_COLOR_WHITE);
-    EXPECT_EQ(board.GetPieceAt(D5), PIECE_TYPE_PAWN | PIECE_COLOR_BLACK);
+    EXPECT_EQ(board.GetPieceAt(SQ_E5), PIECE_TYPE_PAWN | PIECE_COLOR_WHITE);
+    EXPECT_EQ(board.GetPieceAt(SQ_D5), PIECE_TYPE_PAWN | PIECE_COLOR_BLACK);
     EXPECT_EQ(board.GetZobristHash(), initialHash);
 }
 
@@ -154,7 +154,7 @@ TEST(Board, PromotionGeneratesAllChoices)
     size_t promotions = 0;
     for (const Move& move : moves)
     {
-        if (move.from == A7 && move.to == A8)
+        if (move.from == SQ_A7 && move.to == SQ_A8)
             ++promotions;
     }
 
@@ -184,7 +184,7 @@ TEST(Board, PinnedPieceCannotExposeKing)
 
     const std::vector<Move> moves = board.GetLegalMoves();
     EXPECT_TRUE(std::none_of(moves.begin(), moves.end(), [](const Move& move) {
-        return move.from == E2 && get_piece_x(move.to) != get_piece_x(move.from);
+        return move.from == SQ_E2 && get_piece_x(move.to) != get_piece_x(move.from);
     }));
 }
 
@@ -206,14 +206,14 @@ TEST(Board, RepetitionIncludesInitialPosition)
         FAIL() << "Move was not legal";
     };
 
-    play(A1, C2);
-    play(B8, C6);
-    play(C2, A1);
-    play(C6, B8);
-    play(A1, C2);
-    play(B8, C6);
-    play(C2, A1);
-    play(C6, B8);
+    play(SQ_A1, SQ_C2);
+    play(SQ_B8, SQ_C6);
+    play(SQ_C2, SQ_A1);
+    play(SQ_C6, SQ_B8);
+    play(SQ_A1, SQ_C2);
+    play(SQ_B8, SQ_C6);
+    play(SQ_C2, SQ_A1);
+    play(SQ_C6, SQ_B8);
 
     EXPECT_TRUE(board.IsThreeFoldRepition());
 }

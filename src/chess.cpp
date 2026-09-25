@@ -225,16 +225,16 @@ inline Bitboard SlidingAttacks(const Square square, const Bitboard occupancy, co
 }
 
 constexpr Bitboard WHITE_KINGSIDE_EMPTY  =
-    (1ULL << F1) | (1ULL << G1);
+    (1ULL << SQ_F1) | (1ULL << SQ_G1);
 
 constexpr Bitboard WHITE_QUEENSIDE_EMPTY =
-    (1ULL << B1) | (1ULL << C1) | (1ULL << D1);
+    (1ULL << SQ_B1) | (1ULL << SQ_C1) | (1ULL << SQ_D1);
 
 constexpr Bitboard BLACK_KINGSIDE_EMPTY  =
-    (1ULL << F8) | (1ULL << G8);
+    (1ULL << SQ_F8) | (1ULL << SQ_G8);
 
 constexpr Bitboard BLACK_QUEENSIDE_EMPTY =
-    (1ULL << B8) | (1ULL << C8) | (1ULL << D8);
+    (1ULL << SQ_B8) | (1ULL << SQ_C8) | (1ULL << SQ_D8);
 
 }
 
@@ -872,19 +872,19 @@ void ChessBoard::MakeMove(Move& move)
 
     if ((originalPiece & 0x07) == PIECE_TYPE_ROOK)
     {
-        if (move.from == H1)
+        if (move.from == SQ_H1)
             castling_rights =
                 CastlingRights(castling_rights & ~CASTLE_WK);
 
-        else if (move.from == A1)
+        else if (move.from == SQ_A1)
             castling_rights =
                 CastlingRights(castling_rights & ~CASTLE_WQ);
 
-        else if (move.from == H8)
+        else if (move.from == SQ_H8)
             castling_rights =
                 CastlingRights(castling_rights & ~CASTLE_BK);
 
-        else if (move.from == A8)
+        else if (move.from == SQ_A8)
             castling_rights =
                 CastlingRights(castling_rights & ~CASTLE_BQ);
     }
@@ -892,19 +892,19 @@ void ChessBoard::MakeMove(Move& move)
     // A rook being captured also removes its castling right.
     if ((capturedPiece & 0x07) == PIECE_TYPE_ROOK)
     {
-        if (move.to == H1)
+        if (move.to == SQ_H1)
             castling_rights =
                 CastlingRights(castling_rights & ~CASTLE_WK);
 
-        else if (move.to == A1)
+        else if (move.to == SQ_A1)
             castling_rights =
                 CastlingRights(castling_rights & ~CASTLE_WQ);
 
-        else if (move.to == H8)
+        else if (move.to == SQ_H8)
             castling_rights =
                 CastlingRights(castling_rights & ~CASTLE_BK);
 
-        else if (move.to == A8)
+        else if (move.to == SQ_A8)
             castling_rights =
                 CastlingRights(castling_rights & ~CASTLE_BQ);
     }
@@ -919,16 +919,16 @@ void ChessBoard::MakeMove(Move& move)
     {
         if (movingWhite)
         {
-            if (move.from == E1 && move.to == G1)
+            if (move.from == SQ_E1 && move.to == SQ_G1)
                 move.flags = MOVE_CASTLE_KINGSIDE;
-            else if (move.from == E1 && move.to == C1)
+            else if (move.from == SQ_E1 && move.to == SQ_C1)
                 move.flags = MOVE_CASTLE_QUEENSIDE;
         }
         else
         {
-            if (move.from == E8 && move.to == G8)
+            if (move.from == SQ_E8 && move.to == SQ_G8)
                 move.flags = MOVE_CASTLE_KINGSIDE;
-            else if (move.from == E8 && move.to == C8)
+            else if (move.from == SQ_E8 && move.to == SQ_C8)
                 move.flags = MOVE_CASTLE_QUEENSIDE;
         }
     }
@@ -1031,8 +1031,8 @@ void ChessBoard::MakeMove(Move& move)
 
     if (move.flags & MOVE_CASTLE_KINGSIDE)
     {
-        Square rookFrom = movingWhite ? H1 : H8;
-        Square rookTo   = movingWhite ? F1 : F8;
+        Square rookFrom = movingWhite ? SQ_H1 : SQ_H8;
+        Square rookTo   = movingWhite ? SQ_F1 : SQ_F8;
 
         Piece rook = pieces[rookFrom];
 
@@ -1055,8 +1055,8 @@ void ChessBoard::MakeMove(Move& move)
     }
     else if (move.flags & MOVE_CASTLE_QUEENSIDE)
     {
-        Square rookFrom = movingWhite ? A1 : A8;
-        Square rookTo   = movingWhite ? D1 : D8;
+        Square rookFrom = movingWhite ? SQ_A1 : SQ_A8;
+        Square rookTo   = movingWhite ? SQ_D1 : SQ_D8;
 
         Piece rook = pieces[rookFrom];
 
@@ -1154,8 +1154,8 @@ void ChessBoard::MakeMove(Move& move)
     // Castling rook.
     if (move.flags & MOVE_CASTLE_KINGSIDE)
     {
-        Square rookFrom = movingWhite ? H1 : H8;
-        Square rookTo   = movingWhite ? F1 : F8;
+        Square rookFrom = movingWhite ? SQ_H1 : SQ_H8;
+        Square rookTo   = movingWhite ? SQ_F1 : SQ_F8;
 
         Piece rook = pieces[rookTo];
 
@@ -1171,8 +1171,8 @@ void ChessBoard::MakeMove(Move& move)
     }
     else if (move.flags & MOVE_CASTLE_QUEENSIDE)
     {
-        Square rookFrom = movingWhite ? A1 : A8;
-        Square rookTo   = movingWhite ? D1 : D8;
+        Square rookFrom = movingWhite ? SQ_A1 : SQ_A8;
+        Square rookTo   = movingWhite ? SQ_D1 : SQ_D8;
 
         Piece rook = pieces[rookTo];
 
@@ -1281,13 +1281,13 @@ void ChessBoard::UndoMove(Move move)
 
         if (movingWhite)
         {
-            rookFrom = H1;
-            rookTo = F1;
+            rookFrom = SQ_H1;
+            rookTo = SQ_F1;
         }
         else
         {
-            rookFrom = H8;
-            rookTo = F8;
+            rookFrom = SQ_H8;
+            rookTo = SQ_F8;
         }
 
         Piece rook = pieces[rookTo];
@@ -1323,13 +1323,13 @@ void ChessBoard::UndoMove(Move move)
 
         if (movingWhite)
         {
-            rookFrom = A1;
-            rookTo = D1;
+            rookFrom = SQ_A1;
+            rookTo = SQ_D1;
         }
         else
         {
-            rookFrom = A8;
-            rookTo = D8;
+            rookFrom = SQ_A8;
+            rookTo = SQ_D8;
         }
 
         Piece rook = pieces[rookTo];
@@ -1437,8 +1437,8 @@ void ChessBoard::UndoMove(Move move)
     // Undo castling rook.
     if (move.flags & MOVE_CASTLE_KINGSIDE)
     {
-        Square rookFrom = movingWhite ? H1 : H8;
-        Square rookTo   = movingWhite ? F1 : F8;
+        Square rookFrom = movingWhite ? SQ_H1 : SQ_H8;
+        Square rookTo   = movingWhite ? SQ_F1 : SQ_F8;
 
         Piece rook = pieces[rookFrom];
 
@@ -1454,8 +1454,8 @@ void ChessBoard::UndoMove(Move move)
     }
     else if (move.flags & MOVE_CASTLE_QUEENSIDE)
     {
-        Square rookFrom = movingWhite ? A1 : A8;
-        Square rookTo   = movingWhite ? D1 : D8;
+        Square rookFrom = movingWhite ? SQ_A1 : SQ_A8;
+        Square rookTo   = movingWhite ? SQ_D1 : SQ_D8;
 
         Piece rook = pieces[rookFrom];
 
@@ -1979,22 +1979,22 @@ void ChessBoard::AddCastlingMoves(
     Square kingSquare,
     Piece king)
 {
-    if (turn == TURN_WHITE && kingSquare == E1)
+    if (turn == TURN_WHITE && kingSquare == SQ_E1)
     {
         // White kingside: e1 -> g1
         if (castling_rights & CASTLE_WK)
         {
-            if (pieces[F1] == NULL_PIECE &&
-                pieces[G1] == NULL_PIECE &&
-                pieces[H1] ==
+            if (pieces[SQ_F1] == NULL_PIECE &&
+                pieces[SQ_G1] == NULL_PIECE &&
+                pieces[SQ_H1] ==
                     (PIECE_COLOR_WHITE | PIECE_TYPE_ROOK) &&
-                !IsSquareAttacked(E1, TURN_BLACK) &&
-                !IsSquareAttacked(F1, TURN_BLACK) &&
-                !IsSquareAttacked(G1, TURN_BLACK))
+                !IsSquareAttacked(SQ_E1, TURN_BLACK) &&
+                !IsSquareAttacked(SQ_F1, TURN_BLACK) &&
+                !IsSquareAttacked(SQ_G1, TURN_BLACK))
             {
                 Move move;
-                move.from = E1;
-                move.to = G1;
+                move.from = SQ_E1;
+                move.to = SQ_G1;
                 move.moved = king;
                 move.captured = NULL_PIECE;
                 move.flags = MOVE_CASTLE_KINGSIDE;
@@ -2007,18 +2007,18 @@ void ChessBoard::AddCastlingMoves(
         // White queenside: e1 -> c1
         if (castling_rights & CASTLE_WQ)
         {
-            if (pieces[D1] == NULL_PIECE &&
-                pieces[C1] == NULL_PIECE &&
-                pieces[B1] == NULL_PIECE &&
-                pieces[A1] ==
+            if (pieces[SQ_D1] == NULL_PIECE &&
+                pieces[SQ_C1] == NULL_PIECE &&
+                pieces[SQ_B1] == NULL_PIECE &&
+                pieces[SQ_A1] ==
                     (PIECE_COLOR_WHITE | PIECE_TYPE_ROOK) &&
-                !IsSquareAttacked(E1, TURN_BLACK) &&
-                !IsSquareAttacked(D1, TURN_BLACK) &&
-                !IsSquareAttacked(C1, TURN_BLACK))
+                !IsSquareAttacked(SQ_E1, TURN_BLACK) &&
+                !IsSquareAttacked(SQ_D1, TURN_BLACK) &&
+                !IsSquareAttacked(SQ_C1, TURN_BLACK))
             {
                 Move move;
-                move.from = E1;
-                move.to = C1;
+                move.from = SQ_E1;
+                move.to = SQ_C1;
                 move.moved = king;
                 move.captured = NULL_PIECE;
                 move.flags = MOVE_CASTLE_QUEENSIDE;
@@ -2029,22 +2029,22 @@ void ChessBoard::AddCastlingMoves(
         }
     }
 
-    if (turn == TURN_BLACK && kingSquare == E8)
+    if (turn == TURN_BLACK && kingSquare == SQ_E8)
     {
         // Black kingside: e8 -> g8
         if (castling_rights & CASTLE_BK)
         {
-            if (pieces[F8] == NULL_PIECE &&
-                pieces[G8] == NULL_PIECE &&
-                pieces[H8] ==
+            if (pieces[SQ_F8] == NULL_PIECE &&
+                pieces[SQ_G8] == NULL_PIECE &&
+                pieces[SQ_H8] ==
                     (PIECE_COLOR_BLACK | PIECE_TYPE_ROOK) &&
-                !IsSquareAttacked(E8, TURN_WHITE) &&
-                !IsSquareAttacked(F8, TURN_WHITE) &&
-                !IsSquareAttacked(G8, TURN_WHITE))
+                !IsSquareAttacked(SQ_E8, TURN_WHITE) &&
+                !IsSquareAttacked(SQ_F8, TURN_WHITE) &&
+                !IsSquareAttacked(SQ_G8, TURN_WHITE))
             {
                 Move move;
-                move.from = E8;
-                move.to = G8;
+                move.from = SQ_E8;
+                move.to = SQ_G8;
                 move.moved = king;
                 move.captured = NULL_PIECE;
                 move.flags = MOVE_CASTLE_KINGSIDE;
@@ -2057,18 +2057,18 @@ void ChessBoard::AddCastlingMoves(
         // Black queenside: e8 -> c8
         if (castling_rights & CASTLE_BQ)
         {
-            if (pieces[D8] == NULL_PIECE &&
-                pieces[C8] == NULL_PIECE &&
-                pieces[B8] == NULL_PIECE &&
-                pieces[A8] ==
+            if (pieces[SQ_D8] == NULL_PIECE &&
+                pieces[SQ_C8] == NULL_PIECE &&
+                pieces[SQ_B8] == NULL_PIECE &&
+                pieces[SQ_A8] ==
                     (PIECE_COLOR_BLACK | PIECE_TYPE_ROOK) &&
-                !IsSquareAttacked(E8, TURN_WHITE) &&
-                !IsSquareAttacked(D8, TURN_WHITE) &&
-                !IsSquareAttacked(C8, TURN_WHITE))
+                !IsSquareAttacked(SQ_E8, TURN_WHITE) &&
+                !IsSquareAttacked(SQ_D8, TURN_WHITE) &&
+                !IsSquareAttacked(SQ_C8, TURN_WHITE))
             {
                 Move move;
-                move.from = E8;
-                move.to = C8;
+                move.from = SQ_E8;
+                move.to = SQ_C8;
                 move.moved = king;
                 move.captured = NULL_PIECE;
                 move.flags = MOVE_CASTLE_QUEENSIDE;

@@ -1127,8 +1127,6 @@ Evaluation ChessBot::MainSearch(
     // Time control.
     // --------------------------------------------------------
 
-    // The bot usually can search ~100k-200k NPS. At 200k NPS,
-    // it will search ~10k nodes in 5ms. This coarse timing is fine.
     if ((current_node & 4095) == 0)
     {
         if (stop_requested.load() ||
