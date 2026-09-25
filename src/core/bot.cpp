@@ -1127,7 +1127,7 @@ Evaluation ChessBot::MainSearch(
     // Time control.
     // --------------------------------------------------------
 
-    if ((current_node & 4095) == 0)
+    if ((current_node & 1023) == 0)
     {
         if (stop_requested.load() ||
             (external_stop_requested != nullptr &&
@@ -1449,11 +1449,5 @@ Evaluation ChessBot::MainSearch(
 
     return best_eval;
 }
-
-
-
-// Endgame fens
-// fen 8/3P4/8/8/8/6K1/8/7k
-// fen 8/8/8/8/8/3k4/8/KR6/
 
 

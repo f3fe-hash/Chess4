@@ -560,10 +560,14 @@ class GameWorker:
 
         self.engine.set_position(moves)
 
-        wtime_ms = deciseconds_to_ms(state.get("wtime"))
-        btime_ms = deciseconds_to_ms(state.get("btime"))
-        winc_ms = deciseconds_to_ms(state.get("winc"))
-        binc_ms = deciseconds_to_ms(state.get("binc"))
+        #wtime_ms = deciseconds_to_ms(state.get("wtime"))
+        #btime_ms = deciseconds_to_ms(state.get("btime"))
+        #winc_ms = deciseconds_to_ms(state.get("winc"))
+        #binc_ms = deciseconds_to_ms(state.get("binc"))
+        wtime_ms = state.get("wtime")
+        btime_ms = state.get("btime")
+        winc_ms = state.get("winc")
+        binc_ms = state.get("binc")
 
         if (
             wtime_ms is not None
