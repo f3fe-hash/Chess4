@@ -14,87 +14,205 @@ const float MOBILITY_MOVE_MULTIPLIER    = 1; // Generic moves don't count for mu
 const float MOBILITY_CAPTURE_MULTIPLIER = 2; // Captures are better than generic moves.
 
 
+
+//
+//  Precomputed Data
+//
+
+
+uint8_t EdgeDistances[64];
+uint8_t BlackPSTIndexes[64];
+
+
 //
 //  Piece Square Tables (PSTs)
 //
 
 
-// Try to get the center pawns out of the way, and keep the knight squares
-// open.
-const int PAWN_PST[64] = {
-     0,  0,  0,  0,  0,  0,  0,  0,
-    80, 80, 80, 80, 80, 80, 80, 80,
-    50, 50, 50, 50, 50, 50, 50, 50,
-    40, 40, 40, 50, 50, 40, 40, 40,
-    25, 25, 15, 45, 45, 15, 25, 25,
-    10, 10, 10, 15, 15, 10, 10, 10,
-     5,  5,  5,  5,  5,  5,  5,  5,
-     0,  0,  0,  0,  0,  0,  0,  0
+// ============================================================
+// PAWN
+// ============================================================
+
+// Early game:
+// Establish the center, create useful pawn structure, and avoid
+// unnecessary pawn moves on the wings.
+const int8_t PAWN_EARLYGAME_PST[64] = {
+     0,   0,   0,   0,   0,   0,   0,   0,
+    10,  10,  10,  15,  15,  10,  10,  10,
+     5,   5,   8,  15,  15,   8,   5,   5,
+     5,   5,  8,  20,  20,   8,   5,   5,
+     5,   5,   8,  20,  20,   8,   5,   5,
+     5,   5,   5,  10,  10,   5,   5,   5,
+     5,   5,   5,   5,   5,   5,   5,   5,
+     0,   0,   0,   0,   0,   0,   0,   0
 };
 
-// For some reason, the bot keeps wanting to move to the edges IMMEDIATELY
-// in the opening, so prevent that.
-const int KNIGHT_PST[64] = {
-    -50, -40, -30, -30, -30, -30, -40, -50,
-    -40, -20,   0,   5,   5,   0, -20, -40,
-    -30,   5,   8,  11,  11,   8,   5, -30,
-    -30,   0,  11,  15,  15,  11,   0, -30,
-    -30,   5,  11,  15,  15,  11,   5, -30,
-    -70,   0,   8,  15,  15,   8,   0, -70,
-    -40, -20,   0,   0,   0,   0, -20, -40,
-    -50, -10, -30, -30, -30, -30, -10, -50
+// Endgame:
+// Advancement becomes much more valuable. Central pawns and pawns
+// deep in enemy territory receive increasingly large bonuses.
+const int8_t PAWN_ENDGAME_PST[64] = {
+     0,   0,   0,   0,   0,   0,   0,   0,
+    15,  15,  15,  20,  20,  15,  15,  15,
+    20,  20,  25,  30,  30,  25,  20,  20,
+    30,  30,  35,  40,  40,  35,  30,  30,
+    45,  45,  50,  55,  55,  50,  45,  45,
+    60,  60,  65,  70,  70,  65,  60,  60,
+    80,  80,  85,  90,  90,  85,  80,  80,
+     0,   0,   0,   0,   0,   0,   0,   0
 };
 
-// Bishop values favor central diagonals and open development squares.
-const int BISHOP_PST[64] = {
+
+// ============================================================
+// KNIGHT
+// ============================================================
+
+// Early game:
+// Strongly discourage the rim and reward central development.
+const int8_t KNIGHT_EARLYGAME_PST[64] = {
+    -50, -35, -25, -20, -20, -25, -35, -50,
+    -35, -15,   0,   5,   5,   0, -15, -35,
+    -25,   0,  10,  15,  15,  10,   0, -25,
+    -20,   5,  15,  20,  20,  15,   5, -20,
+    -20,   5,  15,  20,  20,  15,   5, -20,
+    -25,   0,  10,  15,  15,  10,   0, -25,
+    -35, -15,   0,   5,   5,   0, -15, -35,
+    -50, -35, -25, -20, -20, -25, -35, -50
+};
+
+// Endgame:
+// Centralization still matters, but there is less emphasis on
+// initial development and more on broad attacking coverage.
+const int8_t KNIGHT_ENDGAME_PST[64] = {
+    -40, -25, -15, -10, -10, -15, -25, -40,
+    -25, -10,   0,   5,   5,   0, -10, -25,
+    -15,   0,  10,  15,  15,  10,   0, -15,
+    -10,   5,  15,  20,  20,  15,   5, -10,
+    -10,   5,  15,  20,  20,  15,   5, -10,
+    -15,   0,  10,  15,  15,  10,   0, -15,
+    -25, -10,   0,   5,   5,   0, -10, -25,
+    -40, -25, -15, -10, -10, -15, -25, -40
+};
+
+
+// ============================================================
+// BISHOP
+// ============================================================
+
+// Early game:
+// Reward useful development and active diagonals while avoiding
+// repeated bishop moves.
+const int8_t BISHOP_EARLYGAME_PST[64] = {
     -20, -10, -10, -10, -10, -10, -10, -20,
-    -10,   0,   0,   0,   0,   0,   0, -10,
+    -10,   0,   0,   5,   5,   0,   0, -10,
     -10,   0,   5,  10,  10,   5,   0, -10,
     -10,   5,   5,  10,  10,   5,   5, -10,
     -10,   0,  10,  10,  10,  10,   0, -10,
     -10,  10,  10,  10,  10,  10,  10, -10,
-    -10,   5,   0,   0,   0,   0,   5, -10,
+    -10,   5,   0,   5,   5,   0,   5, -10,
     -20, -10, -10, -10, -10, -10, -10, -20
 };
 
-// Keep control of the center file, and castle.
-const int ROOK_PST[64] = {
-      0,   0,   0,   5,   5,   0,   0,   0,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-      5,   5,   5,   5,   5,   5,   5,   5,
-      0,   0,   0,  20,  10,  15,   0,   0
+// Endgame:
+// Open positions make bishop activity and centralization more important.
+const int8_t BISHOP_ENDGAME_PST[64] = {
+    -15, -10,  -5,  -5,  -5,  -5, -10, -15,
+    -10,   0,   5,   8,   8,   5,   0, -10,
+     -5,   5,  10,  15,  15,  10,   5,  -5,
+     -5,   8,  15,  20,  20,  15,   8,  -5,
+     -5,   8,  15,  20,  20,  15,   8,  -5,
+     -5,   5,  10,  15,  15,  10,   5,  -5,
+    -10,   0,   5,   8,   8,   5,   0, -10,
+    -15, -10,  -5,  -5,  -5,  -5, -10, -15
 };
 
-// Keep away from corners, for maximum attack space
-const int QUEEN_PST[64] = {
-    -20, -10, -10,  -5,  -5, -10, -10, -20,
-    -10,   0,   0,   0,   0,   0,   0, -10,
+
+// ============================================================
+// ROOK
+// ============================================================
+
+// Early game:
+// Keep rooks connected and reward getting them onto useful files,
+// while avoiding premature rook adventures.
+const int8_t ROOK_EARLYGAME_PST[64] = {
+     0,   0,   5,   5,   5,   5,   0,   0,
+     0,   0,   0,   5,   5,   0,   0,   0,
+     0,   0,   0,   5,   5,   0,   0,   0,
+     0,   0,   0,   5,   5,   0,   0,   0,
+     0,   0,   0,   5,   5,   0,   0,   0,
+     5,   5,   5,  10,  10,   5,   5,   5,
+    10,  10,  10,  15,  15,  10,  10,  10,
+     5,   5,  10,  15,  15,  10,   5,   5
+};
+
+// Endgame:
+// Rooks become highly valuable on open files, the 7th rank, and
+// behind advanced pawns.
+const int8_t ROOK_ENDGAME_PST[64] = {
+     0,   0,   5,   5,   5,   5,   0,   0,
+     5,   5,  10,  10,  10,  10,   5,   5,
+    10,  10,  15,  15,  15,  15,  10,  10,
+    15,  15,  20,  20,  20,  20,  15,  15,
+    20,  20,  25,  25,  25,  25,  20,  20,
+    30,  30,  35,  35,  35,  35,  30,  30,
+    45,  45,  50,  55,  55,  50,  45,  45,
+    10,  10,  15,  20,  20,  15,  10,  10
+};
+
+
+// ============================================================
+// QUEEN
+// ============================================================
+
+// Early game:
+// Discourage early queen adventures while allowing useful central
+// squares after development.
+const int8_t QUEEN_EARLYGAME_PST[64] = {
+    -25, -15, -10,  -5,  -5, -10, -15, -25,
+    -15,  -5,   0,   0,   0,   0,  -5, -15,
     -10,   0,   5,   5,   5,   5,   0, -10,
-     -5,   0,   5,   5,   5,   5,   0,  -5,
-      0,   0,   5,   5,   5,   5,   0,  -5,
-    -10,   5,   5,   5,   5,   5,   0, -10,
-    -10,   0,   5,   0,   0,   0,   0, -10,
-    -20, -10, -10,  -5,  -5, -10, -10, -20
+     -5,   0,   5,  10,  10,   5,   0,  -5,
+     -5,   0,   5,  10,  10,   5,   0,  -5,
+    -10,   0,   5,   5,   5,   5,   0, -10,
+    -15,  -5,   0,   0,   0,   0,  -5, -15,
+    -25, -15, -10,  -5,  -5, -10, -15, -25
 };
 
-// Early game: Castle
-const int KING_PST[64] = {
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -20, -30, -30, -40, -40, -30, -30, -20,
-    -10, -20, -20, -20, -20, -20, -20, -10,
-     20,  20,   0,   0,   0,   0,  20,  20,
-     20,  10,  30,   0,   0,  10,  30,  20
+// Endgame:
+// With fewer pieces on the board, queen activity and centralization
+// become substantially more important.
+const int8_t QUEEN_ENDGAME_PST[64] = {
+    -10,  -5,   0,   5,   5,   0,  -5, -10,
+     -5,   0,   5,  10,  10,   5,   0,  -5,
+      0,   5,  10,  15,  15,  10,   5,   0,
+      5,  10,  15,  20,  20,  15,  10,   5,
+      5,  10,  15,  20,  20,  15,  10,   5,
+      0,   5,  10,  15,  15,  10,   5,   0,
+     -5,   0,   5,  10,  10,   5,   0,  -5,
+    -10,  -5,   0,   5,   5,   0,  -5, -10
 };
 
-// Endgame: Do something!
-const int KING_ENDGAME_PST[64] = {
+
+// ============================================================
+// KING
+// ============================================================
+
+// Early game:
+// Get safe and castle. Central squares are heavily discouraged.
+const int8_t KING_EARLYGAME_PST[64] = {
+    -30, -40, -50, -60, -60, -50, -40, -30,
+    -30, -40, -50, -60, -60, -50, -40, -30,
+    -30, -40, -50, -60, -60, -50, -40, -30,
+    -30, -40, -50, -60, -60, -50, -40, -30,
+    -20, -30, -40, -50, -50, -40, -30, -20,
+    -10, -20, -20, -30, -30, -20, -20, -10,
+     20,  25,   5,   0,   0,   5,  25,  20,
+     25,  15,  30,   5,   5,  30,  15,  25
+};
+
+// Endgame:
+// The king becomes an active fighting piece. Centralization is
+// strongly rewarded.
+const int8_t KING_ENDGAME_PST[64] = {
     -50, -40, -30, -20, -20, -30, -40, -50,
     -40, -20, -10,   0,   0, -10, -20, -40,
     -30, -10,  10,  20,  20,  10, -10, -30,
@@ -123,15 +241,48 @@ ChessBoardEvaluator::~ChessBoardEvaluator()
 {}
 
 
-Square ChessBoardEvaluator::__fix_pst_square(Square square)
+Square ChessBoardEvaluator::GetPSTIndex(Square square)
 {
     if (board->GetTurnColor() == TURN_WHITE)
         return square;
     
-    uint8_t x = get_piece_x(square);
-    uint8_t y = get_piece_y(square);
+    return BlackPSTIndexes[square];
+}
 
-    return flatten_xy(x, 7 - y);
+
+inline int8_t distance_to_edge(Square sq)
+{
+    return EdgeDistances[sq];
+}
+
+
+void ChessBoardEvaluator::ComputeDistancesToEdge()
+{
+    for (Square sq = 0; sq < 64; sq++)
+    {
+        int8_t x = get_piece_x(sq);
+        int8_t y = get_piece_y(sq);
+
+        uint8_t distance = (uint8_t)std::min(
+            std::min(x, (int8_t)(7 - x)),
+            std::min(y, (int8_t)(7 - y))
+        );
+
+        EdgeDistances[sq] = distance;
+    }
+}
+
+
+void ChessBoardEvaluator::ComputePSTIndexes()
+{
+    for (Square sq = 0; sq < 64; sq++)
+    {
+        uint8_t x = get_piece_x(sq);
+        uint8_t y = get_piece_y(sq);
+
+        uint8_t BlackPSTIndex = flatten_xy(x, 7 - y);
+        BlackPSTIndexes[sq] = BlackPSTIndex;
+    }
 }
 
 
@@ -155,53 +306,31 @@ Evaluation ChessBoardEvaluator::EvaluatePieceValues()
 Evaluation ChessBoardEvaluator::EvaluatePSTs()
 {
     Evaluation eval = 0;
-
-    const bool white = board->GetTurnColor() == TURN_WHITE;
+    
     const int phase = GetEndgamePhase();
 
     auto evaluate_pieces =
-        [&](Bitboard pieces, const auto& pst)
+        [&](Bitboard pieces, const int8_t pst[64], const int8_t endgame_pst[64])
         {
             while (pieces)
             {
                 const Square square =
-                    Square(__builtin_ctzll(pieces));
+                    GetLSB(pieces);
 
                 pieces &= pieces - 1;
 
-                const Square pst_square =
-                    white
-                        ? square
-                        : Square(square ^ 56);
+                const Square pst_square = GetPSTIndex(square);
 
-                eval += pst[pst_square];
+                eval += Interpolate(pst[pst_square], endgame_pst[pst_square], 256 - phase) / 256;
             }
         };
 
-    evaluate_pieces(board->GetPawns(), PAWN_PST);
-    evaluate_pieces(board->GetKnights(), KNIGHT_PST);
-    evaluate_pieces(board->GetBishops(), BISHOP_PST);
-    evaluate_pieces(board->GetRooks(), ROOK_PST);
-    evaluate_pieces(board->GetQueens(), QUEEN_PST);
-
-    Bitboard kings = board->GetKings();
-
-    while (kings)
-    {
-        const Square square =
-            Square(__builtin_ctzll(kings));
-
-        kings &= kings - 1;
-
-        const Square pst_square =
-            white
-                ? square
-                : Square(square ^ 56);
-
-        eval +=
-            ((256 - phase) * KING_PST[pst_square] +
-             phase * KING_ENDGAME_PST[pst_square]) / 256;
-    }
+    evaluate_pieces(board->GetPawns(), PAWN_EARLYGAME_PST, PAWN_ENDGAME_PST);
+    evaluate_pieces(board->GetKnights(), KNIGHT_EARLYGAME_PST, KNIGHT_ENDGAME_PST);
+    evaluate_pieces(board->GetBishops(), BISHOP_EARLYGAME_PST, BISHOP_ENDGAME_PST);
+    evaluate_pieces(board->GetRooks(), ROOK_EARLYGAME_PST, ROOK_ENDGAME_PST);
+    evaluate_pieces(board->GetQueens(), QUEEN_EARLYGAME_PST, QUEEN_ENDGAME_PST);
+    evaluate_pieces(board->GetKings(), KING_EARLYGAME_PST, KING_ENDGAME_PST);
 
     return eval;
 }

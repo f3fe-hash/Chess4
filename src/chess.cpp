@@ -175,7 +175,7 @@ Bitboard FindMagic(
     for (;;)
     {
         const Bitboard magic = GetRandom(randomState);
-        if (std::popcount((mask * magic) & 0xFF00000000000000ULL) < 6)
+        if (GetNumSetBits((mask * magic) & 0xFF00000000000000ULL) < 6)
             continue;
 
         std::vector<Bitboard> used(tableSize, 0ULL);
@@ -790,8 +790,8 @@ void ChessBoard::ComputeAttackLookupBitboards()
         bishop_masks[square] = relevantMask(bishopDirs, 4);
         rook_masks[square] = relevantMask(rookDirs, 4);
 
-        const unsigned bishopBits = std::popcount(bishop_masks[square]);
-        const unsigned rookBits = std::popcount(rook_masks[square]);
+        const unsigned bishopBits = GetNumSetBits(bishop_masks[square]);
+        const unsigned rookBits = GetNumSetBits(rook_masks[square]);
         bishop_magic_shifts[square] = 64 - bishopBits;
         rook_magic_shifts[square] = 64 - rookBits;
 
@@ -811,8 +811,8 @@ void ChessBoard::ComputeAttackLookupBitboards()
             square, rook_masks[square], rookDirs, 4,
             rookBits, randomState);
 
-        const unsigned bishopSize = 1U << std::popcount(bishop_masks[square]);
-        const unsigned rookSize = 1U << std::popcount(rook_masks[square]);
+        const unsigned bishopSize = 1U << GetNumSetBits(bishop_masks[square]);
+        const unsigned rookSize = 1U << GetNumSetBits(rook_masks[square]);
         for (unsigned index = 0; index < bishopSize; ++index)
         {
             const Bitboard subset = OccupancyFromIndex(
@@ -2117,7 +2117,7 @@ std::vector<Move> ChessBoard::GetLegalMoves()
         if (moverKings)
         {
             Square kingSq =
-                Square(__builtin_ctzll(moverKings));
+                GetLSB(moverKings);
 
             Bitboard opponentAttacks =
                 (turn == TURN_WHITE)
@@ -2180,7 +2180,7 @@ std::vector<Move> ChessBoard::GetLegalCaptures()
         if (moverKings)
         {
             Square kingSq =
-                Square(__builtin_ctzll(moverKings));
+                GetLSB(moverKings);
 
             Bitboard opponentAttacks =
                 (turn == TURN_WHITE)
@@ -2231,7 +2231,7 @@ size_t ChessBoard::GetNumMoves() const
     // Can't move onto a square occupied by one of our own pieces.
     const Bitboard moves = attacks & ~own;
 
-    return std::popcount(moves);
+    return GetNumSetBits(moves);
 }
 
 
@@ -2265,7 +2265,7 @@ size_t ChessBoard::GetNumCaptures() const
     // Can't move onto a square occupied by one of our own pieces.
     const Bitboard moves = attacks & ~own;
 
-    return std::popcount(moves & enemy);
+    return GetNumSetBits(moves & enemy);
 }
 
 
@@ -2301,8 +2301,8 @@ void ChessBoard::GetNumLegalMovesAndCaptures(
     // Can't move onto a square occupied by one of our own pieces.
     const Bitboard moves = attacks & ~own;
 
-    moves_count = std::popcount(moves);
-    captures_count = std::popcount(moves & enemy);
+    moves_count = GetNumSetBits(moves);
+    captures_count = GetNumSetBits(moves & enemy);
 }
 
 
@@ -2360,7 +2360,7 @@ bool ChessBoard::IsCheck()
     if (!kings)
         return false;
 
-    Square kingSq = Square(__builtin_ctzll(kings));
+    Square kingSq = GetLSB(kings);
     return (opponentAttacks & SquareMask(kingSq)) != 0;
 }
 

@@ -12,7 +12,7 @@
 #include "core/move_ordering.hpp"
 #include "core/scoring.hpp"
 
-#define USE_EXPR_AI
+//#define USE_EXPR_AI
 
 #ifdef USE_EXPR_AI
 #include "core/eval/model.hpp"
@@ -28,21 +28,10 @@ class ChessBoardEvaluator
     EvalModel model;
 #endif
 
-    Square __fix_pst_square(Square square);
+    Square GetPSTIndex(Square square);
 
-    inline int distance_to_edge(Square sq)
-    {
-        // Returns the heuristic distance between a square and the nearest edge.
-        int x = get_piece_x(sq);
-        int y = get_piece_y(sq);
-
-        return std::min({
-            x,
-            7 - x,
-            y,
-            7 - y
-        });
-    }
+    void ComputeDistancesToEdge();
+    void ComputePSTIndexes();
 
     Evaluation QuiescenceSearchMain(
         Evaluation alpha,

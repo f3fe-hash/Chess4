@@ -338,18 +338,36 @@ const
     // Configuration
     // --------------------------------------------------------
 
-    // Minimum useful search time under normal circumstances.
     constexpr double MINIMUM_TIME_SECONDS = 0.05;
-
-    // Never intentionally spend more than this on one move.
     constexpr double MAXIMUM_TIME_SECONDS = 20.0;
 
-    // Keep this much time in reserve for UCI communication,
-    // scheduling delays, and stopping the search.
+    // Do not intentionally search all the way to the clock.
     constexpr int64_t SAFETY_MARGIN_MS = 250;
 
+    // Assume roughly this many moves for the initial time
+    // allocation.
+    //
+    // This produces:
+    //
+    //   1+0   -> ~1.0 sec
+    //   2+0   -> ~2.0 sec
+    //   5+0   -> ~5.0 sec
+    //   10+0  -> ~10.0 sec
+    //   15+0  -> ~15.0 sec
+    //
+    constexpr double EXPECTED_MOVES = 60.0;
+
+    // How aggressively we try to return toward the original
+    // starting clock.
+    constexpr double CLOCK_CORRECTION_STRENGTH = 0.35;
+
+    // Use most of the increment as part of the time budget.
+    // This prevents the clock from continuously accumulating
+    // time in increment games.
+    constexpr double INCREMENT_USAGE = 0.90;
+
     // --------------------------------------------------------
-    // Convert times to seconds.
+    // Convert to seconds.
     // --------------------------------------------------------
 
     const double time_seconds =
@@ -360,11 +378,22 @@ const
             std::max<int64_t>(1, original_time)
         ) / 1000.0;
 
+    const double opponent_seconds =
+        static_cast<double>(
+            std::max<int64_t>(0, opponent_time)
+        ) / 1000.0;
+
     const double increment_seconds =
-        static_cast<double>(increment) / 1000.0;
+        static_cast<double>(
+            std::max<int64_t>(0, increment)
+        ) / 1000.0;
 
     // --------------------------------------------------------
-    // Game phase
+    // Game phase.
+    // --------------------------------------------------------
+    //
+    // Keep this deliberately mild. We don't want material
+    // count to cause large swings in time usage.
     // --------------------------------------------------------
 
     const double phase =
@@ -372,17 +401,11 @@ const
             evaluator.GetEndgamePhase()
         ) / 256.0;
 
-    // Opening -> less time.
-    // Middlegame -> normal time.
-    // Endgame -> more time.
-    //
-    // Keep this relatively mild because material alone does not
-    // necessarily indicate tactical complexity.
     double phase_multiplier;
 
     if (phase < 0.25)
     {
-        phase_multiplier = 0.80;
+        phase_multiplier = 0.90;
     }
     else if (phase < 0.50)
     {
@@ -390,226 +413,231 @@ const
     }
     else if (phase < 0.75)
     {
-        phase_multiplier = 1.05;
+        phase_multiplier = 1.00;
     }
     else
     {
-        phase_multiplier = 1.20;
+        phase_multiplier = 1.10;
     }
 
     // --------------------------------------------------------
-    // Calculate the remaining time budget.
+    // Base allocation.
     // --------------------------------------------------------
     //
-    // We don't want to spend the entire clock. A reserve is
-    // necessary because the engine cannot predict exactly how
-    // many moves the game will last.
+    // The important change:
     //
-    // The reserve is smaller in very short games because there
-    // simply isn't much time available.
+    // We directly derive the normal thinking time from the
+    // ORIGINAL time control instead of using sqrt().
+    //
+    // This keeps the bot centered around the starting clock.
     // --------------------------------------------------------
 
-    //double reserve_fraction;
+    double base_time =
+        original_seconds / EXPECTED_MOVES;
 
-    //if (original_seconds <= 60.0)
-    //{
-    //    reserve_fraction = 0.10;
-    //}
-    //else if (original_seconds <= 300.0)
-    //{
-    //    reserve_fraction = 0.12;
-    //}
-    //else
-    //{
-    //    reserve_fraction = 0.15;
-    //}
-
-    //const double reserve =
-    //    original_seconds * reserve_fraction;
-
-    //const double usable_time =
-    //    std::max(
-    //        0.0,
-    //        time_seconds - reserve
-    //    );
+    // Don't allow extremely long time controls to produce
+    // unreasonable per-move allocations.
+    base_time =
+        std::clamp(
+            base_time,
+            MINIMUM_TIME_SECONDS,
+            MAXIMUM_TIME_SECONDS
+        );
 
     // --------------------------------------------------------
-    // Determine how much time we should normally spend per move.
+    // Increment.
     // --------------------------------------------------------
     //
-    // This is based on the ORIGINAL time control rather than
-    // simply dividing the current clock.
+    // The increment is time that comes back after the move.
     //
-    // That means:
+    // If we spend substantially less than the increment, our
+    // clock grows indefinitely.
     //
-    //   1+0   -> roughly 1 second
-    //   2+0   -> roughly 2 seconds
-    //   5+0   -> roughly 4-5 seconds
-    //   10+0  -> roughly 8-10 seconds
-    //   15+0  -> roughly 10-15 seconds
+    // Therefore, use most of the increment as part of the
+    // normal budget.
     //
-    // Longer controls deliberately get diminishing returns.
-    // --------------------------------------------------------
-
-    double base_time;
-
-    if (original_seconds <= 60.0)
-    {
-        base_time = original_seconds / 60.0;
-    }
-    else
-    {
-        base_time =
-            std::sqrt(original_seconds / 60.0);
-    }
-
-    // Scale so that 10-15 minute games get substantially more
-    // time than 1-minute games.
-    base_time *= 1.0;
-
-    // --------------------------------------------------------
-    // Account for how much of our clock remains.
-    // --------------------------------------------------------
+    // Example:
     //
-    // If we're still near the starting clock, use the normal
-    // allocation.
+    //   10+5 -> ~10 + 4.5 = ~14.5 sec
     //
-    // If we've burned a significant amount of our clock, become
-    // increasingly conservative.
-    // --------------------------------------------------------
-
-    const double remaining_fraction =
-        time_seconds / std::max(1.0, original_seconds);
-
-    double clock_multiplier = 1.0;
-
-    if (remaining_fraction < 0.10)
-    {
-        clock_multiplier = 0.35;
-    }
-    else if (remaining_fraction < 0.20)
-    {
-        clock_multiplier = 0.50;
-    }
-    else if (remaining_fraction < 0.35)
-    {
-        clock_multiplier = 0.70;
-    }
-    else if (remaining_fraction < 0.50)
-    {
-        clock_multiplier = 0.85;
-    }
-
-    // --------------------------------------------------------
-    // Prevent the engine from spending time too aggressively.
+    // This keeps the clock roughly stable rather than banking
+    // large amounts of time.
     // --------------------------------------------------------
 
     double play_time =
-        base_time *
-        phase_multiplier *
-        clock_multiplier;
+        base_time +
+        increment_seconds * INCREMENT_USAGE;
 
     // --------------------------------------------------------
-    // Increment
+    // Clock drift correction.
     // --------------------------------------------------------
     //
-    // Increment is effectively additional time that becomes
-    // available after the move.
+    // This is the most important part.
     //
-    // Spend only part of it immediately so that increment games
-    // don't cause the engine to think indefinitely.
+    // Compare the current clock to the ORIGINAL clock.
+    //
+    // If we have gained a minute, deliberately think longer.
+    // If we have lost a minute, think shorter.
+    //
+    // The correction is proportional to the drift, but capped
+    // so a single move cannot suddenly consume the entire bank.
     // --------------------------------------------------------
 
-    if (increment_seconds > 0.0)
+    const double clock_difference =
+        time_seconds - original_seconds;
+
+    const double normalized_drift =
+        clock_difference /
+        std::max(1.0, original_seconds);
+
+    // Positive drift -> spend more.
+    // Negative drift -> spend less.
+    //
+    // Example:
+    //
+    // Starting: 600 sec
+    // Current:  660 sec
+    //
+    // Drift = +10%
+    // Correction = +3.5%
+    //
+    // This gradually spends the accumulated time instead of
+    // allowing the clock to continue climbing.
+    double correction_multiplier =
+        1.0 +
+        normalized_drift *
+        CLOCK_CORRECTION_STRENGTH;
+
+    correction_multiplier =
+        std::clamp(
+            correction_multiplier,
+            0.50,
+            1.50
+        );
+
+    play_time *= correction_multiplier;
+
+    // --------------------------------------------------------
+    // Current-clock emergency adjustment.
+    // --------------------------------------------------------
+    //
+    // If we're getting very low, become increasingly
+    // conservative regardless of the original time control.
+    // --------------------------------------------------------
+
+    const double remaining_fraction =
+        time_seconds /
+        std::max(1.0, original_seconds);
+
+    if (remaining_fraction < 0.10)
     {
-        constexpr double INCREMENT_FRACTION = 0.40;
-
-        play_time +=
-            increment_seconds * INCREMENT_FRACTION;
+        play_time *= 0.35;
+    }
+    else if (remaining_fraction < 0.20)
+    {
+        play_time *= 0.50;
+    }
+    else if (remaining_fraction < 0.35)
+    {
+        play_time *= 0.70;
+    }
+    else if (remaining_fraction < 0.50)
+    {
+        play_time *= 0.85;
     }
 
     // --------------------------------------------------------
-    // Clock-ratio adjustment
+    // Opponent clock.
     // --------------------------------------------------------
     //
-    // If we're much behind our opponent, conserve time.
-    // If we're far ahead, we can afford deeper searches.
+    // Only make relatively small adjustments based on the
+    // opponent's clock. We don't want this to override the
+    // primary goal of maintaining our own clock.
     // --------------------------------------------------------
 
-    if (opponent_time > 0)
+    if (opponent_seconds > 0.0)
     {
-        const double opponent_seconds =
-            static_cast<double>(opponent_time) / 1000.0;
-
         const double ratio =
             time_seconds /
             std::max(0.001, opponent_seconds);
 
         if (ratio < 0.35)
         {
-            play_time *= 0.60;
+            play_time *= 0.75;
         }
         else if (ratio < 0.60)
         {
-            play_time *= 0.75;
+            play_time *= 0.85;
         }
         else if (ratio < 0.80)
         {
-            play_time *= 0.90;
+            play_time *= 0.92;
         }
         else if (ratio > 2.50)
         {
-            play_time *= 1.15;
+            play_time *= 1.08;
         }
         else if (ratio > 1.75)
         {
-            play_time *= 1.08;
+            play_time *= 1.04;
         }
     }
 
     // --------------------------------------------------------
-    // Prevent one move from consuming too much of the clock.
+    // Game phase.
+    // --------------------------------------------------------
+
+    play_time *= phase_multiplier;
+
+    // --------------------------------------------------------
+    // Prevent a single move from consuming an excessive
+    // percentage of the current clock.
     // --------------------------------------------------------
 
     double maximum_fraction;
 
     if (time_seconds <= 5.0)
     {
-        maximum_fraction = 0.10;
+        maximum_fraction = 0.20;
     }
     else if (time_seconds <= 15.0)
     {
-        maximum_fraction = 0.08;
+        maximum_fraction = 0.15;
     }
     else if (time_seconds <= 30.0)
     {
-        maximum_fraction = 0.07;
+        maximum_fraction = 0.12;
     }
     else if (time_seconds <= 60.0)
     {
-        maximum_fraction = 0.06;
+        maximum_fraction = 0.10;
     }
     else
     {
-        maximum_fraction = 0.05;
+        maximum_fraction = 0.08;
     }
 
-    play_time = std::min(
-        play_time,
-        time_seconds * maximum_fraction
-    );
+    play_time =
+        std::min(
+            play_time,
+            time_seconds * maximum_fraction
+        );
 
     // --------------------------------------------------------
-    // Final limits
+    // Final limits.
     // --------------------------------------------------------
 
-    play_time = std::clamp(
-        play_time,
-        MINIMUM_TIME_SECONDS,
-        MAXIMUM_TIME_SECONDS
-    );
+    play_time =
+        std::clamp(
+            play_time,
+            MINIMUM_TIME_SECONDS,
+            MAXIMUM_TIME_SECONDS
+        );
 
-    // Never intentionally use the safety margin.
+    // --------------------------------------------------------
+    // Safety margin.
+    // --------------------------------------------------------
+
     const double safe_time =
         std::max(
             0.001,
@@ -618,10 +646,11 @@ const
             ) / 1000.0
         );
 
-    play_time = std::min(
-        play_time,
-        safe_time
-    );
+    play_time =
+        std::min(
+            play_time,
+            safe_time
+        );
 
     return DurationMs(
         static_cast<int64_t>(
@@ -629,7 +658,6 @@ const
         )
     );
 }
-
 
 
 
