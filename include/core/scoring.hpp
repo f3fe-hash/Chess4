@@ -32,10 +32,14 @@ const inline Evaluation QUEEN_VALUE_EG   = 2682;
 inline thread_local int endgame_phase = 0;
 
 inline void SetEndgamePhase(int phase)
-{ endgame_phase = phase; }
+{
+    endgame_phase = phase;
+}
 
 inline Evaluation Interpolate(const Evaluation a, const Evaluation b, const float x)
-{ return a + x * ( b - a); }
+{
+    return a + x * (b - a);
+}
 
 inline Evaluation GetPieceValue(const Evaluation op, const Evaluation mg, const Evaluation eg)
 {

@@ -10,10 +10,10 @@ Architecture:
     lichess_bridge.py
        |          |
        v          v
-   Game A       Game B       ... one worker per game
+    Game A       Game B       ... one worker per game
        |          |
        v          v
-   UCI TCP      UCI TCP
+    UCI TCP      UCI TCP
        |          |
        +----------+
              |
@@ -32,6 +32,8 @@ The bridge uses the Lichess move list as the authoritative position.
 This means restarting the bridge in the middle of a game is safe:
 the current game state is reconstructed from Lichess instead of from
 local state.
+
+Transient Lichess and UCI connection failures are retried automatically.
 """
 
 from __future__ import annotations
@@ -84,8 +86,16 @@ MOVE_OVERHEAD_MS = 250
 # Set to None for no artificial cap.
 MAX_MOVE_TIME_MS: Optional[int] = None
 
-# Retry delay for transient errors.
-RECONNECT_DELAY_SECONDS = 5
+# Retry transient failures once per second.
+#
+# RETRY_COUNT is also the reporting interval. We do NOT give up after
+# RETRY_COUNT attempts. Transient connection failures are retried
+# indefinitely so a worker can survive a temporary network/server outage.
+RETRY_COUNT = 10
+RETRY_DELAY_SECONDS = 1
+
+# Backwards-compatible name used by the main event loop.
+RECONNECT_DELAY_SECONDS = RETRY_DELAY_SECONDS
 
 # Games that have not had a move for this long are considered stale.
 # 24 hours (1 day)
@@ -115,92 +125,214 @@ def log_error(message: str) -> None:
 
 class LichessAPI:
     def __init__(self, token: str):
-        self.session = requests.Session()
-        self.session.headers.update({
-            "Authorization": f"Bearer {token}",
-            "User-Agent": "CustomUCIChessBot/1.0",
-        })
+        # requests.Session is not intended to be shared concurrently
+        # between many worker threads. Give each thread its own session.
+        self.token = token
+        self._local = threading.local()
+
+    def _get_session(self) -> requests.Session:
+        session = getattr(self._local, "session", None)
+
+        if session is None:
+            session = requests.Session()
+            session.headers.update({
+                "Authorization": f"Bearer {self.token}",
+                "User-Agent": "CustomUCIChessBot/1.0",
+            })
+
+            self._local.session = session
+
+        return session
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        retry_count: int = RETRY_COUNT,
+        **kwargs,
+    ) -> requests.Response:
+        """
+        Perform a normal HTTP request.
+
+        Connection failures, timeouts, and HTTP 5xx errors are retried
+        indefinitely. Every RETRY_COUNT attempts we emit a stronger
+        diagnostic message, but we never abandon the operation.
+        """
+
+        attempt = 0
+
+        while True:
+            attempt += 1
+
+            try:
+                response = self._get_session().request(
+                    method,
+                    url,
+                    **kwargs,
+                )
+
+                # Retry server-side failures.
+                if response.status_code >= 500:
+                    error = requests.HTTPError(
+                        f"HTTP {response.status_code} from {url}",
+                        response=response,
+                    )
+
+                    status = response.status_code
+                    response.close()
+
+                    if attempt % retry_count == 0:
+                        log_error(
+                            f"Lichess HTTP {status}; "
+                            f"still retrying after {attempt} attempts"
+                        )
+                    else:
+                        log_error(
+                            f"Lichess HTTP {status}; "
+                            f"retrying in {RETRY_DELAY_SECONDS}s"
+                        )
+
+                    time.sleep(RETRY_DELAY_SECONDS)
+                    continue
+
+                # Do not retry ordinary client errors such as:
+                # 400 invalid move
+                # 401 unauthorized
+                # 403 forbidden
+                # 404 not found
+                response.raise_for_status()
+
+                return response
+
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                if attempt % retry_count == 0:
+                    log_error(
+                        f"Lichess request still failing after "
+                        f"{attempt} attempts: {exc}"
+                    )
+                else:
+                    log_error(
+                        f"Lichess request failed "
+                        f"(attempt {attempt}); "
+                        f"retrying in {RETRY_DELAY_SECONDS}s: {exc}"
+                    )
+
+                time.sleep(RETRY_DELAY_SECONDS)
 
     def get_account(self) -> dict:
-        response = self.session.get(
+        response = self._request(
+            "GET",
             f"{LICHESS_API}/api/account",
             timeout=30,
         )
-        response.raise_for_status()
-        return response.json()
+
+        try:
+            return response.json()
+        finally:
+            response.close()
+
+    def _stream(self, url: str):
+        """
+        Yield newline-delimited JSON and automatically reconnect after
+        transient network disconnects.
+
+        This retries forever. A temporary Lichess/network outage must
+        not terminate the bot or a game worker.
+        """
+
+        while True:
+            response = None
+
+            try:
+                response = self._get_session().get(
+                    url,
+                    stream=True,
+                    timeout=(30, None),
+                )
+
+                response.raise_for_status()
+
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+
+                    yield json.loads(line)
+
+                # A clean EOF is unusual for these streams, so treat it
+                # as a transient disconnect.
+                log_error(
+                    f"Lichess stream closed; reconnecting in "
+                    f"{RETRY_DELAY_SECONDS}s"
+                )
+
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                log_error(
+                    f"Lichess stream disconnected: {exc}; "
+                    f"reconnecting in {RETRY_DELAY_SECONDS}s"
+                )
+
+            finally:
+                if response is not None:
+                    response.close()
+
+            time.sleep(RETRY_DELAY_SECONDS)
 
     def stream_events(self):
         """
-        Global account event stream.
-
-        Lichess sends newline-delimited JSON.
+        Global account event stream with automatic reconnects.
         """
-        response = self.session.get(
-            f"{LICHESS_API}/api/stream/event",
-            stream=True,
-            timeout=(30, None),
+
+        yield from self._stream(
+            f"{LICHESS_API}/api/stream/event"
         )
-        response.raise_for_status()
-
-        try:
-            for line in response.iter_lines():
-                if not line:
-                    continue
-
-                yield json.loads(line)
-        finally:
-            response.close()
 
     def stream_game(self, game_id: str):
         """
-        Stream one game's events.
+        Stream one game's events with automatic reconnects.
 
-        The first useful event is normally gameFull, followed by
-        gameState events.
+        Lichess's move list is authoritative, so reconnecting is safe.
         """
-        response = self.session.get(
-            f"{LICHESS_API}/api/bot/game/stream/{game_id}",
-            stream=True,
-            timeout=(30, None),
+
+        yield from self._stream(
+            f"{LICHESS_API}/api/bot/game/stream/{game_id}"
         )
-        response.raise_for_status()
-
-        try:
-            for line in response.iter_lines():
-                if not line:
-                    continue
-
-                yield json.loads(line)
-        finally:
-            response.close()
 
     def accept_challenge(self, challenge_id: str) -> None:
-        response = self.session.post(
+        response = self._request(
+            "POST",
             f"{LICHESS_API}/api/challenge/{challenge_id}/accept",
             timeout=30,
         )
-        response.raise_for_status()
+
+        response.close()
 
     def decline_challenge(self, challenge_id: str) -> None:
-        response = self.session.post(
+        response = self._request(
+            "POST",
             f"{LICHESS_API}/api/challenge/{challenge_id}/decline",
             timeout=30,
         )
-        response.raise_for_status()
+
+        response.close()
 
     def make_move(self, game_id: str, move: str) -> None:
-        response = self.session.post(
+        response = self._request(
+            "POST",
             f"{LICHESS_API}/api/bot/game/{game_id}/move/{move}",
             timeout=30,
         )
-        response.raise_for_status()
+
+        response.close()
 
     def abort_game(self, game_id: str) -> None:
-        response = self.session.post(
+        response = self._request(
+            "POST",
             f"{LICHESS_API}/api/bot/game/{game_id}/abort",
             timeout=30,
         )
-        response.raise_for_status()
+
+        response.close()
 
     def send_chat(
         self,
@@ -208,12 +340,14 @@ class LichessAPI:
         text: str,
         room: str = "player",
     ) -> None:
-        response = self.session.post(
+        response = self._request(
+            "POST",
             f"{LICHESS_API}/api/bot/game/{game_id}/chat",
             data={"room": room, "text": text},
             timeout=30,
         )
-        response.raise_for_status()
+
+        response.close()
 
 
 # ============================================================
@@ -231,37 +365,77 @@ class UCIClient:
         self.host = host
         self.port = port
         self.game_id = game_id
+
         self.sock: Optional[socket.socket] = None
         self.file = None
+
         self.lock = threading.Lock()
 
     def connect(self) -> None:
-        self.close()
+        """
+        Connect to the UCI server.
 
-        log(
-            f"[{self.game_id}] Connecting to UCI "
-            f"{self.host}:{self.port}"
-        )
+        Connection failures are retried indefinitely, once per second.
+        """
 
-        sock = socket.create_connection(
-            (self.host, self.port),
-            timeout=10,
-        )
+        attempt = 0
+        last_error: Optional[Exception] = None
 
-        # Do not leave a timeout on the socket while the engine is
-        # searching. A long search must be allowed to complete.
-        sock.settimeout(None)
+        while True:
+            attempt += 1
 
-        self.sock = sock
-        self.file = sock.makefile("r", encoding="utf-8", newline="\n")
+            self.close()
 
-        self.send("uci")
-        self.wait_for("uciok")
+            log(
+                f"[{self.game_id}] Connecting to UCI "
+                f"{self.host}:{self.port}"
+            )
 
-        self.send("isready")
-        self.wait_for("readyok")
+            try:
+                sock = socket.create_connection(
+                    (self.host, self.port),
+                    timeout=10,
+                )
 
-        log(f"[{self.game_id}] UCI connection ready")
+                # Do not leave a timeout on the socket while the engine
+                # is searching. A long search must be allowed to complete.
+                sock.settimeout(None)
+
+                self.sock = sock
+                self.file = sock.makefile(
+                    "r",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+
+                self.send("uci")
+                self.wait_for("uciok")
+
+                self.send("isready")
+                self.wait_for("readyok")
+
+                log(f"[{self.game_id}] UCI connection ready")
+                return
+
+            except (ConnectionError, OSError) as exc:
+                last_error = exc
+                self.close()
+
+                if attempt % RETRY_COUNT == 0:
+                    log_error(
+                        f"[{self.game_id}] UCI connection still failing "
+                        f"after {attempt} attempts: {exc}"
+                    )
+                else:
+                    log_error(
+                        f"[{self.game_id}] UCI connection failed "
+                        f"(attempt {attempt}): {exc}; "
+                        f"retrying in {RETRY_DELAY_SECONDS}s"
+                    )
+
+                time.sleep(RETRY_DELAY_SECONDS)
+
+        raise RuntimeError(f"UCI connection failed: {last_error}")
 
     def close(self) -> None:
         if self.file is not None:
@@ -286,17 +460,30 @@ class UCIClient:
 
         log(f"[{self.game_id}] > {command}")
 
-        self.sock.sendall(
-            (command + "\n").encode("utf-8")
-        )
+        try:
+            self.sock.sendall(
+                (command + "\n").encode("utf-8")
+            )
+        except (BrokenPipeError, ConnectionResetError, OSError) as exc:
+            self.close()
+            raise ConnectionError(
+                f"UCI send failed: {exc}"
+            ) from exc
 
     def read_line(self) -> str:
         if self.file is None:
             raise ConnectionError("UCI socket is not connected")
 
-        line = self.file.readline()
+        try:
+            line = self.file.readline()
+        except (ConnectionResetError, OSError) as exc:
+            self.close()
+            raise ConnectionError(
+                f"UCI read failed: {exc}"
+            ) from exc
 
         if line == "":
+            self.close()
             raise ConnectionError("UCI server disconnected")
 
         line = line.rstrip("\r\n")
@@ -521,6 +708,71 @@ class GameWorker:
             f"Chat reply to {username}: {reply}"
         )
 
+    def search_with_retry(
+        self,
+        moves: list[str],
+        *,
+        wtime_ms: Optional[int],
+        btime_ms: Optional[int],
+        winc_ms: Optional[int],
+        binc_ms: Optional[int],
+    ) -> tuple[str, Optional[str]]:
+        """
+        Search with automatic UCI reconnection.
+
+        If the TCP connection disappears during set_position/search,
+        throw away the old session, reconnect, replay the authoritative
+        Lichess position, and search again.
+
+        This retries indefinitely. We do not abandon the game just because
+        the engine server temporarily disappeared.
+        """
+
+        attempt = 0
+        last_error: Optional[Exception] = None
+
+        while True:
+            attempt += 1
+
+            try:
+                self.ensure_engine()
+
+                assert self.engine is not None
+
+                # Always replay the complete authoritative position after
+                # reconnecting. The UCI server's previous state is never
+                # trusted after a connection failure.
+                self.engine.set_position(moves)
+
+                return self.engine.search(
+                    wtime_ms=wtime_ms,
+                    btime_ms=btime_ms,
+                    winc_ms=winc_ms,
+                    binc_ms=binc_ms,
+                    movetime_ms=1000,
+                )
+
+            except (ConnectionError, OSError) as exc:
+                last_error = exc
+
+                self.close_engine()
+
+                if attempt % RETRY_COUNT == 0:
+                    log_error(
+                        f"[{self.game_id}] UCI search still failing "
+                        f"after {attempt} attempts: {exc}"
+                    )
+                else:
+                    log_error(
+                        f"[{self.game_id}] UCI connection lost "
+                        f"(attempt {attempt}): {exc}; "
+                        f"retrying in {RETRY_DELAY_SECONDS}s"
+                    )
+
+                time.sleep(RETRY_DELAY_SECONDS)
+
+        raise RuntimeError(f"UCI search failed: {last_error}")
+
     def process_position(
         self,
         moves: list[str],
@@ -552,18 +804,14 @@ class GameWorker:
         if not self.is_our_turn(moves):
             with self.state_lock:
                 self.last_processed_ply = ply
+
             return
-
-        self.ensure_engine()
-
-        assert self.engine is not None
-
-        self.engine.set_position(moves)
 
         #wtime_ms = deciseconds_to_ms(state.get("wtime"))
         #btime_ms = deciseconds_to_ms(state.get("btime"))
         #winc_ms = deciseconds_to_ms(state.get("winc"))
         #binc_ms = deciseconds_to_ms(state.get("binc"))
+
         wtime_ms = state.get("wtime")
         btime_ms = state.get("btime")
         winc_ms = state.get("winc")
@@ -576,12 +824,12 @@ class GameWorker:
             wtime_ms = max(0, wtime_ms - MOVE_OVERHEAD_MS)
             btime_ms = max(0, btime_ms - MOVE_OVERHEAD_MS)
 
-        move, evaluation = self.engine.search(
+        move, evaluation = self.search_with_retry(
+            moves,
             wtime_ms=wtime_ms,
             btime_ms=btime_ms,
             winc_ms=winc_ms,
             binc_ms=binc_ms,
-            movetime_ms=1000,
         )
 
         self.evaluation = evaluation
@@ -591,7 +839,10 @@ class GameWorker:
             f"(eval: {evaluation})"
         )
 
-        self.api.make_move(self.game_id, move)
+        self.api.make_move(
+            self.game_id,
+            move,
+        )
 
         with self.state_lock:
             self.last_processed_ply = ply
@@ -608,6 +859,7 @@ class GameWorker:
                     f"[{self.game_id}] Engine produced move "
                     f"{move} that is illegal on local board"
                 )
+
             else:
                 self.board.push(chess_move)
                 self.move_history.append(move)
@@ -615,101 +867,181 @@ class GameWorker:
 
         except ValueError as exc:
             log_error(
-                f"[{self.game_id}] Invalid engine move {move}: {exc}"
+                f"[{self.game_id}] Invalid engine move "
+                f"{move}: {exc}"
             )
 
     def run(self) -> None:
         log(f"[{self.game_id}] Game worker started")
 
         try:
-            for event in self.api.stream_game(self.game_id):
-                if self.stop_event.is_set():
-                    break
+            while not self.stop_event.is_set():
+                try:
+                    for event in self.api.stream_game(self.game_id):
+                        if self.stop_event.is_set():
+                            break
 
-                event_type = event.get("type")
+                        event_type = event.get("type")
 
-                if event_type == "gameFull":
-                    state = event.get("state", {})
+                        try:
+                            if event_type == "gameFull":
+                                state = event.get("state", {})
 
-                    if state.get("status") != "started":
-                        log(
-                            f"[{self.game_id}] "
-                            f"Game already ended: {state.get('status')}"
-                        )
-                        break
+                                if state.get("status") != "started":
+                                    log(
+                                        f"[{self.game_id}] "
+                                        f"Game already ended: "
+                                        f"{state.get('status')}"
+                                    )
 
-                    if not self.is_recent_game(event):
-                        log(
-                            f"[{self.game_id}] "
-                            "Game is older than 24 hours; ignoring"
-                        )
-                        break
+                                    self.stop_event.set()
+                                    break
 
-                    self.determine_color(event)
+                                if not self.is_recent_game(event):
+                                    log(
+                                        f"[{self.game_id}] "
+                                        "Game is older than 24 hours; "
+                                        "ignoring"
+                                    )
 
-                    moves = parse_moves(
-                        state.get("moves", "")
-                    )
+                                    self.stop_event.set()
+                                    break
 
-                    log(
-                        f"[{self.game_id}] "
-                        f"Game full: {self.color}, "
-                        f"{len(moves)} plies"
-                    )
+                                self.determine_color(event)
 
-                    self.process_position(
-                        moves,
-                        state,
-                    )
+                                moves = parse_moves(
+                                    state.get("moves", "")
+                                )
 
-                elif event_type == "gameState":
-                    status = event.get("status")
+                                log(
+                                    f"[{self.game_id}] "
+                                    f"Game full: {self.color}, "
+                                    f"{len(moves)} plies"
+                                )
 
-                    if status != "started":
-                        log(
-                            f"[{self.game_id}] "
-                            f"Game ended: {status}"
-                        )
-                        break
+                                self.process_position(
+                                    moves,
+                                    state,
+                                )
 
-                    moves = parse_moves(
-                        event.get("moves", "")
-                    )
+                            elif event_type == "gameState":
+                                status = event.get("status")
 
-                    self.process_position(
-                        moves,
-                        event,
-                    )
+                                if status != "started":
+                                    log(
+                                        f"[{self.game_id}] "
+                                        f"Game ended: {status}"
+                                    )
 
-                elif event_type == "chatLine":
-                    try:
-                        self.process_chat(event)
-                    except Exception as exc:
+                                    self.stop_event.set()
+                                    break
+
+                                moves = parse_moves(
+                                    event.get("moves", "")
+                                )
+
+                                self.process_position(
+                                    moves,
+                                    event,
+                                )
+
+                            elif event_type == "chatLine":
+                                try:
+                                    self.process_chat(event)
+
+                                except (
+                                    requests.RequestException,
+                                    ConnectionError,
+                                    OSError,
+                                ) as exc:
+                                    log_error(
+                                        f"[{self.game_id}] "
+                                        f"Chat connection error: {exc}"
+                                    )
+
+                                except Exception as exc:
+                                    log_error(
+                                        f"[{self.game_id}] "
+                                        f"Chat error: {exc}"
+                                    )
+
+                        except (
+                            requests.ConnectionError,
+                            requests.Timeout,
+                            ConnectionError,
+                            OSError,
+                        ) as exc:
+                            log_error(
+                                f"[{self.game_id}] "
+                                f"Transient connection error while "
+                                f"processing event: {exc}; "
+                                f"waiting {RETRY_DELAY_SECONDS}s"
+                            )
+
+                            time.sleep(RETRY_DELAY_SECONDS)
+
+                        except Exception as exc:
+                            # A malformed/unexpected event should not kill
+                            # every other aspect of the game worker.
+                            log_error(
+                                f"[{self.game_id}] "
+                                f"Error processing {event_type} event: "
+                                f"{exc}"
+                            )
+
+                    if not self.stop_event.is_set():
                         log_error(
-                            f"[{self.game_id}] Chat error: {exc}"
+                            f"[{self.game_id}] "
+                            f"Lichess game stream ended; "
+                            f"reconnecting in "
+                            f"{RETRY_DELAY_SECONDS}s"
                         )
 
-        except requests.HTTPError as exc:
-            log_error(
-                f"[{self.game_id}] Lichess HTTP error: {exc}"
-            )
+                        time.sleep(RETRY_DELAY_SECONDS)
 
-        except (ConnectionError, OSError) as exc:
-            log_error(
-                f"[{self.game_id}] Connection error: {exc}"
-            )
+                except requests.HTTPError as exc:
+                    log_error(
+                        f"[{self.game_id}] "
+                        f"Lichess game stream HTTP error: "
+                        f"{exc}; retrying in "
+                        f"{RETRY_DELAY_SECONDS}s"
+                    )
 
-        except Exception as exc:
-            log_error(
-                f"[{self.game_id}] "
-                f"Unhandled game error: {exc}"
-            )
+                    time.sleep(RETRY_DELAY_SECONDS)
+
+                except (
+                    requests.ConnectionError,
+                    requests.Timeout,
+                    ConnectionError,
+                    OSError,
+                ) as exc:
+                    log_error(
+                        f"[{self.game_id}] "
+                        f"Lichess game stream connection error: "
+                        f"{exc}; reconnecting in "
+                        f"{RETRY_DELAY_SECONDS}s"
+                    )
+
+                    time.sleep(RETRY_DELAY_SECONDS)
+
+                except Exception as exc:
+                    log_error(
+                        f"[{self.game_id}] "
+                        f"Unhandled game stream error: "
+                        f"{exc}; reconnecting in "
+                        f"{RETRY_DELAY_SECONDS}s"
+                    )
+
+                    time.sleep(RETRY_DELAY_SECONDS)
 
         finally:
             self.stop_event.set()
             self.close_engine()
-            log(f"[{self.game_id}] Game worker stopped")
-    
+
+            log(
+                f"[{self.game_id}] Game worker stopped"
+            )
+
     def rebuild_board(self, moves: list[str]) -> None:
         """
         Rebuild the board from the authoritative Lichess move list.
@@ -759,7 +1091,10 @@ class GameWorker:
                 chess.PAWN,
             ):
                 count = len(
-                    self.board.pieces(piece_type, color)
+                    self.board.pieces(
+                        piece_type,
+                        color,
+                    )
                 )
 
                 if count:
@@ -826,6 +1161,7 @@ class GameWorker:
         should still be considered recent. Fall back to createdAt for
         games that have never had a move.
         """
+
         now_ms = int(time.time() * 1000)
 
         last_activity_ms = event.get("lastMoveAt")
@@ -839,7 +1175,10 @@ class GameWorker:
             return True
 
         try:
-            age_seconds = (now_ms - int(last_activity_ms)) / 1000
+            age_seconds = (
+                now_ms - int(last_activity_ms)
+            ) / 1000
+
         except (TypeError, ValueError):
             return True
 
@@ -863,6 +1202,7 @@ def deciseconds_to_ms(value) -> Optional[int]:
 
     try:
         return int(value) * 100
+
     except (TypeError, ValueError):
         return None
 
@@ -891,13 +1231,19 @@ def challenge_allowed(challenge: dict) -> bool:
 # ============================================================
 
 class BotManager:
-    def __init__(self, api: LichessAPI, bot_id: str):
+    def __init__(
+        self,
+        api: LichessAPI,
+        bot_id: str,
+    ):
         self.api = api
         self.bot_id = bot_id
 
         # Ignore games that existed before this process started.
         # Lichess reports createdAt in milliseconds since Unix epoch.
-        self.start_time_ms = int(time.time() * 1000)
+        self.start_time_ms = int(
+            time.time() * 1000
+        )
 
         self.executor = ThreadPoolExecutor(
             max_workers=MAX_GAMES,
@@ -922,7 +1268,10 @@ class BotManager:
 
         if last_move_at is not None:
             try:
-                last_move_time = int(last_move_at) / 1000.0
+                last_move_time = (
+                    int(last_move_at) / 1000.0
+                )
+
                 age = time.time() - last_move_time
 
                 if age > STALE_GAME_SECONDS:
@@ -933,13 +1282,15 @@ class BotManager:
 
                     try:
                         self.api.abort_game(game_id)
+
                         log(
                             f"[{game_id}] Stale game aborted"
                         )
+
                     except Exception as exc:
                         log_error(
-                            f"[{game_id}] Could not abort stale game: "
-                            f"{exc}"
+                            f"[{game_id}] "
+                            f"Could not abort stale game: {exc}"
                         )
 
                     return
@@ -955,8 +1306,10 @@ class BotManager:
         with self.games_lock:
             if game_id in self.games:
                 log(
-                    f"[{game_id}] Already running; ignoring duplicate"
+                    f"[{game_id}] Already running; "
+                    f"ignoring duplicate"
                 )
+
                 return
 
             if len(self.games) >= MAX_GAMES:
@@ -964,6 +1317,7 @@ class BotManager:
                     f"[{game_id}] Maximum game count "
                     f"({MAX_GAMES}) reached"
                 )
+
                 return
 
             worker = GameWorker(
@@ -983,13 +1337,19 @@ class BotManager:
     def _run_game(self, worker: GameWorker) -> None:
         try:
             worker.run()
+
         finally:
             with self.games_lock:
-                self.games.pop(worker.game_id, None)
+                self.games.pop(
+                    worker.game_id,
+                    None,
+                )
 
     def stop_all(self) -> None:
         with self.games_lock:
-            workers = list(self.games.values())
+            workers = list(
+                self.games.values()
+            )
 
         for worker in workers:
             worker.stop_event.set()
@@ -1026,7 +1386,10 @@ def main() -> None:
     account = api.get_account()
 
     bot_id = account["id"]
-    username = account.get("username", bot_id)
+    username = account.get(
+        "username",
+        bot_id,
+    )
     title = account.get("title")
 
     log("")
@@ -1040,7 +1403,10 @@ def main() -> None:
             "WARNING: this account is not marked as a BOT account."
         )
 
-    manager = BotManager(api, bot_id)
+    manager = BotManager(
+        api,
+        bot_id,
+    )
 
     log(
         f"Waiting for challenges/events "
@@ -1054,7 +1420,11 @@ def main() -> None:
                     event_type = event.get("type")
 
                     if event_type == "challenge":
-                        challenge = event.get("challenge", {})
+                        challenge = event.get(
+                            "challenge",
+                            {},
+                        )
+
                         challenge_id = challenge.get("id")
 
                         if not challenge_id:
@@ -1063,7 +1433,10 @@ def main() -> None:
                         challenger = challenge.get(
                             "challenger",
                             {},
-                        ).get("name", "unknown")
+                        ).get(
+                            "name",
+                            "unknown",
+                        )
 
                         if not challenge_allowed(challenge):
                             log(
@@ -1075,6 +1448,7 @@ def main() -> None:
                                 api.decline_challenge(
                                     challenge_id
                                 )
+
                             except Exception as exc:
                                 log_error(
                                     f"Could not decline "
@@ -1088,6 +1462,7 @@ def main() -> None:
                                 f"Ignoring challenge "
                                 f"{challenge_id} from {challenger}"
                             )
+
                             continue
 
                         if (
@@ -1104,6 +1479,7 @@ def main() -> None:
                                 api.decline_challenge(
                                     challenge_id
                                 )
+
                             except Exception as exc:
                                 log_error(
                                     f"Could not decline "
@@ -1121,6 +1497,7 @@ def main() -> None:
                             api.accept_challenge(
                                 challenge_id
                             )
+
                         except Exception as exc:
                             log_error(
                                 f"Could not accept "
@@ -1128,7 +1505,11 @@ def main() -> None:
                             )
 
                     elif event_type == "gameStart":
-                        game = event.get("game", {})
+                        game = event.get(
+                            "game",
+                            {},
+                        )
+
                         game_id = game.get("id")
 
                         if not game_id:
@@ -1144,10 +1525,13 @@ def main() -> None:
 
             except requests.HTTPError as exc:
                 log_error(
-                    f"Lichess event stream HTTP error: {exc}"
+                    f"Lichess event stream HTTP error: {exc}; "
+                    f"retrying in {RECONNECT_DELAY_SECONDS}s"
                 )
 
-                time.sleep(RECONNECT_DELAY_SECONDS)
+                time.sleep(
+                    RECONNECT_DELAY_SECONDS
+                )
 
             except (
                 requests.ConnectionError,
@@ -1156,20 +1540,28 @@ def main() -> None:
                 OSError,
             ) as exc:
                 log_error(
-                    f"Lichess event stream disconnected: {exc}"
+                    f"Lichess event stream disconnected: {exc}; "
+                    f"reconnecting in "
+                    f"{RECONNECT_DELAY_SECONDS}s"
                 )
 
-                time.sleep(RECONNECT_DELAY_SECONDS)
+                time.sleep(
+                    RECONNECT_DELAY_SECONDS
+                )
 
             except KeyboardInterrupt:
                 raise
 
             except Exception as exc:
                 log_error(
-                    f"Event stream error: {exc}"
+                    f"Event stream error: {exc}; "
+                    f"reconnecting in "
+                    f"{RECONNECT_DELAY_SECONDS}s"
                 )
 
-                time.sleep(RECONNECT_DELAY_SECONDS)
+                time.sleep(
+                    RECONNECT_DELAY_SECONDS
+                )
 
     except KeyboardInterrupt:
         log("")
