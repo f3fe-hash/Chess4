@@ -746,7 +746,7 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
     const int move_idx          = params.move_idx;
     const bool is_root_search   = params.is_root_search;
 
-    const bool maximizing = board->GetTurnColor() == TURN_WHITE;
+    const bool parent_maximizing = board->GetTurnColor() == TURN_WHITE;
 
     // --------------------------------------------------------
     // Make the move.
@@ -841,16 +841,7 @@ Evaluation ChessBot::SearchCore(const SearchParams& params)
 
     if (was_reduced)
     {
-        // After making the move, the side to move is the opponent.
-        //
-        // If Black is to move, the parent was maximizing.
-        // The move needs a re-search if it appears to improve alpha.
-        //
-        // If White is to move, the parent was minimizing.
-        // The move needs a re-search if it appears to improve
-        // (lower) beta.
-
-        if (maximizing)
+        if (parent_maximizing)
         {
             research = eval > alpha + LMR_RESEARCH_MARGIN;
         }
