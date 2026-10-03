@@ -913,23 +913,23 @@ void ChessBoard::MakeMove(Move& move)
     // Flag updates
     // ------------------------------------------------------------
 
-    move.flags = MOVE_NORMAL;
+    uint8_t flags = MOVE_NORMAL;
 
     if ((originalPiece & 0x07) == PIECE_TYPE_KING)
     {
         if (movingWhite)
         {
             if (move.from == SQ_E1 && move.to == SQ_G1)
-                move.flags = MOVE_CASTLE_KINGSIDE;
+                flags = MOVE_CASTLE_KINGSIDE;
             else if (move.from == SQ_E1 && move.to == SQ_C1)
-                move.flags = MOVE_CASTLE_QUEENSIDE;
+                flags = MOVE_CASTLE_QUEENSIDE;
         }
         else
         {
             if (move.from == SQ_E8 && move.to == SQ_G8)
-                move.flags = MOVE_CASTLE_KINGSIDE;
+                flags = MOVE_CASTLE_KINGSIDE;
             else if (move.from == SQ_E8 && move.to == SQ_C8)
-                move.flags = MOVE_CASTLE_QUEENSIDE;
+                flags = MOVE_CASTLE_QUEENSIDE;
         }
     }
 
@@ -941,7 +941,7 @@ void ChessBoard::MakeMove(Move& move)
         if (move.to == en_passant && move.from != move.to &&
             pieces[move.to] == NULL_PIECE)
         {
-            move.flags = MOVE_EN_PASSANT;
+            flags = MOVE_EN_PASSANT;
             Square capturedSquare = FlattenSquare(
                 get_piece_x(move.to), get_piece_y(move.from));
             capturedPiece = pieces[capturedSquare];
@@ -951,7 +951,7 @@ void ChessBoard::MakeMove(Move& move)
         if ((movingWhite && fromY == 6 && toY == 7) ||
             (!movingWhite && fromY == 1 && toY == 0))
         {
-            move.flags = MOVE_PROMOTION;
+            flags |= MOVE_PROMOTION;
 
             // If the move explicitly specifies a promotion piece,
             // use it. Otherwise retain the old behavior of promoting
@@ -972,6 +972,8 @@ void ChessBoard::MakeMove(Move& move)
             }
         }
     }
+
+    move.flags = flags;
 
     // ------------------------------------------------------------
     // Remove original piece from its old square.
@@ -1194,8 +1196,12 @@ void ChessBoard::MakeMove(Move& move)
 
     fullmove_number += turn == TURN_BLACK;
 
-    UpdateAttackBitboardsOnly();
+    UpdateOccupancyBitboards();
+    UpdateAttackBitboards();
 
+    // Recompute from the actual board state so the hash stays
+    // consistent with the board and undo logic.
+    zobrist_hash = GenerateZobristHash();
     history.push_back(zobrist_hash);
 }
 
@@ -1478,8 +1484,9 @@ void ChessBoard::UndoMove(Move move)
 
     fullmove_number -= turn == TURN_WHITE;
 
-    UpdateAttackBitboardsOnly();
-    //zobrist_hash = GenerateZobristHash();
+    UpdateOccupancyBitboards();
+    UpdateAttackBitboards();
+    zobrist_hash = GenerateZobristHash();
 
     (void) history.pop_back();
 }
@@ -2097,7 +2104,8 @@ std::vector<Move> ChessBoard::GetLegalMoves()
 
     for (size_t read = 0; read < moves.size(); ++read)
     {
-        Move move = moves[read];
+        const Move originalMove = moves[read];
+        Move move = originalMove;
 
         MakeMove(move);
 
@@ -2131,7 +2139,7 @@ std::vector<Move> ChessBoard::GetLegalMoves()
         UndoMove(move);
 
         if (!in_check)
-            moves[write++] = move;
+            moves[write++] = originalMove;
     }
 
     moves.resize(write);
@@ -2158,7 +2166,8 @@ std::vector<Move> ChessBoard::GetLegalCaptures()
 
     for (size_t read = 0; read < moves.size(); ++read)
     {
-        Move move = moves[read];
+        const Move originalMove = moves[read];
+        Move move = originalMove;
 
         if (!move.IsCapture())
             continue;
@@ -2194,7 +2203,7 @@ std::vector<Move> ChessBoard::GetLegalCaptures()
         UndoMove(move);
 
         if (!in_check)
-            moves[write++] = move;
+            moves[write++] = originalMove;
     }
 
     moves.resize(write);

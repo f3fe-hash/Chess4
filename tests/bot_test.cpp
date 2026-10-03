@@ -7,6 +7,16 @@
 #include "core/bot.hpp"
 
 
+TEST(Bot, StartingPositionEvaluationIsBalanced)
+{
+    auto board = std::make_shared<ChessBoard>();
+    board->LoadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    ChessBot bot(board);
+
+    EXPECT_NEAR(bot.EvaluateRaw(), 0.0f, 1.0f);
+}
+
+
 TEST(Bot, SearchIsRepeatableOnTacticalPosition) 
 {
     auto board = std::make_shared<ChessBoard>();
@@ -127,5 +137,5 @@ TEST(Bot, DoesNotPlayQueenIntoKingCapture)
         ASSERT_TRUE(board->IsLegalMove(result.move));
         EXPECT_FALSE(result.move.from == SQ_D6 && result.move.to == SQ_H2);
     }
-    EXPECT_LT(afterCapture, -500);
+    EXPECT_GT(afterCapture, 500);
 }

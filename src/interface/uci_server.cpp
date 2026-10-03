@@ -72,7 +72,7 @@ bool UCIServer::CreateSocket()
 
     if (bind(
             server_socket,
-            reinterpret_cast<sockaddr*>(&address),
+            reinterpret_cast<sockaddr *>(&address),
             sizeof(address)) < 0)
     {
         CloseServer();
@@ -397,8 +397,6 @@ void UCIServer::Run()
     }
 
     CloseServer();
-
-    running = false;
 
     /*
      * Wait for every client.

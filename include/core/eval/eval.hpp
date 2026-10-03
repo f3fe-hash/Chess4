@@ -70,10 +70,32 @@ public:
 
         int material = 0;
 
-        material += board->CountQueens()  * GetQueenValue();
-        material += board->CountRooks()   * GetRookValue();
-        material += board->CountBishops() * GetBishopValue();
-        material += board->CountKnights() * GetKnightValue();
+        for (Square square = 0; square < 64; ++square)
+        {
+            const Piece piece = board->GetPieceAt(square);
+
+            switch (piece & 0x07)
+            {
+                case PIECE_TYPE_QUEEN:
+                    material += QUEEN_VALUE_OP;
+                    break;
+
+                case PIECE_TYPE_ROOK:
+                    material += ROOK_VALUE_OP;
+                    break;
+
+                case PIECE_TYPE_BISHOP:
+                    material += BISHOP_VALUE_OP;
+                    break;
+
+                case PIECE_TYPE_KNIGHT:
+                    material += KNIGHT_VALUE_OP;
+                    break;
+
+                default:
+                    break;
+            }
+        }
 
         // Approximate non-pawn material at the beginning of a game.
         //

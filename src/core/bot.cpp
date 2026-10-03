@@ -1186,47 +1186,25 @@ Evaluation ChessBot::MainSearch(
 
     bool maximizing = board->GetTurnColor() == TURN_WHITE;
 
-    // --------------------------------------------------------
-    // Checkmate / stalemate.
-    // --------------------------------------------------------
-
-    if (board->IsCheckMate())
+    // The legal move list already tells us whether this is a terminal node.
+    // Avoid regenerating it in IsCheckMate() and IsStaleMate().
+    if (moves.empty())
     {
-        // Side to move has been checkmated.
-        //
-        // White being mated is bad for white, while black being
-        // mated is good for white. Scores are white-centric.
-        //
-        // The ply adjustment makes the engine prefer:
-        //
-        //     fastest mate
-        //
-        // and avoid:
-        //
-        //     being mated as quickly as possible.
-
+        if (board->IsCheck())
+        {
+            // The ply adjustment prefers faster mates and delays being mated.
 #ifdef DEBUG_SEARCH_TERMINATION
             bot_debug.terminations.push_back(SearchTermination::Checkmate);
 #endif
+            if (maximizing)
+                return -CHECKMATE_SCORE + ply;
 
-        if (maximizing)
-        {
-            return -CHECKMATE_SCORE + ply;
-        }
-        else
-        {
             return CHECKMATE_SCORE - ply;
         }
-    }
-
-    else if (board->IsStaleMate())
-    {
 
 #ifdef DEBUG_SEARCH_TERMINATION
         bot_debug.terminations.push_back(SearchTermination::Stalemate);
 #endif
-
-        // No legal moves and not in check = stalemate.
         return 0;
     }
 

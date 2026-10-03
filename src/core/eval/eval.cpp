@@ -199,14 +199,14 @@ const int8_t QUEEN_ENDGAME_PST[64] = {
 // Early game:
 // Get safe and castle. Central squares are heavily discouraged.
 const int8_t KING_EARLYGAME_PST[64] = {
-    -30, -40, -50, -60, -60, -50, -40, -30,
-    -30, -40, -50, -60, -60, -50, -40, -30,
-    -30, -40, -50, -60, -60, -50, -40, -30,
-    -30, -40, -50, -60, -60, -50, -40, -30,
-    -20, -30, -40, -50, -50, -40, -30, -20,
-    -10, -20, -20, -30, -30, -20, -20, -10,
+     25,  15,  30,   5,   5,  30,  15,  25,
      20,  25,   5,   0,   0,   5,  25,  20,
-     25,  15,  30,   5,   5,  30,  15,  25
+    -10, -20, -20, -30, -30, -20, -20, -10,
+    -20, -30, -40, -50, -50, -40, -30, -20,
+    -30, -40, -50, -60, -60, -50, -40, -30,
+    -30, -40, -50, -60, -60, -50, -40, -30,
+    -30, -40, -50, -60, -60, -50, -40, -30,
+    -30, -40, -50, -60, -60, -50, -40, -30,
 };
 
 // Endgame:
@@ -234,6 +234,8 @@ ChessBoardEvaluator::ChessBoardEvaluator(
     , model(board)
 #endif
 {
+    ComputeDistancesToEdge();
+    ComputePSTIndexes();
 }
 
 
@@ -307,7 +309,7 @@ Evaluation ChessBoardEvaluator::EvaluatePSTs()
 {
     Evaluation eval = 0;
     
-    const int phase = GetEndgamePhase();
+    const float phase = GetEndgamePhase() / 256.0f;
 
     auto evaluate_pieces =
         [&](Bitboard pieces, const int8_t pst[64], const int8_t endgame_pst[64])
@@ -321,7 +323,7 @@ Evaluation ChessBoardEvaluator::EvaluatePSTs()
 
                 const Square pst_square = GetPSTIndex(square);
 
-                eval += Interpolate(pst[pst_square], endgame_pst[pst_square], 256 - phase) / 256;
+                eval += Interpolate(pst[pst_square], endgame_pst[pst_square], phase);
             }
         };
 
@@ -552,33 +554,12 @@ Evaluation ChessBoardEvaluator::EvaluateMobility()
 
 Evaluation ChessBoardEvaluator::EvaluatePosition()
 {
-    Evaluation TOTAL_MULTIPLIERS = PST_EVAL_MULTIPLIER + MOBILITY_MULTIPLIER;
+    Evaluation TOTAL_MULTIPLIERS = PST_EVAL_MULTIPLIER + MOBILITY_MULTIPLIER + PIECE_VALUE_MULTIPLIER;
 
     bool turn = board->GetTurnColor();
 
     Evaluation eval_white = 0;
     Evaluation eval_black = 0;
-    Evaluation material_balance = 0;
-
-    for (Square square = 0; square < 64; ++square)
-    {
-        const Piece piece = board->GetPieceAt(square);
-        const Evaluation value = [&]() -> Evaluation
-        {
-            switch (piece & 0x07)
-            {
-                case PIECE_TYPE_PAWN: return PAWN_VALUE_OP;
-                case PIECE_TYPE_KNIGHT: return KNIGHT_VALUE_OP;
-                case PIECE_TYPE_BISHOP: return BISHOP_VALUE_OP;
-                case PIECE_TYPE_ROOK: return ROOK_VALUE_OP;
-                case PIECE_TYPE_QUEEN: return QUEEN_VALUE_OP;
-                default: return 0;
-            }
-        }();
-
-        material_balance +=
-            (piece & PIECE_COLOR_WHITE) ? value : -value;
-    }
 
     // ------------------------------------------------------------
     // White evaluation.
@@ -586,6 +567,7 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
 
     board->SetTurnColor(TURN_WHITE);
 
+    eval_white += PIECE_VALUE_MULTIPLIER    * EvaluatePieceValues();
     eval_white += PST_EVAL_MULTIPLIER       * EvaluatePSTs();
     eval_white += MOBILITY_MULTIPLIER       * EvaluateMobility();
 
@@ -595,19 +577,21 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
 
     board->SetTurnColor(TURN_BLACK);
 
+    eval_black += PIECE_VALUE_MULTIPLIER    * EvaluatePieceValues();
     eval_black += PST_EVAL_MULTIPLIER       * EvaluatePSTs();
     eval_black += MOBILITY_MULTIPLIER       * EvaluateMobility();
 
     // Restore original turn.
     board->SetTurnColor(turn);
 
-    Evaluation base = material_balance + eval_white - eval_black;
+    Evaluation base = eval_white - eval_black;
 
     // Mop-up is more useful in the endgame, and is really expensive to calculate.
     if (IsEndgame())
     {
         base +=
             MOP_UP_MULTIPLIER * ComputeMopupBonus();
+
         TOTAL_MULTIPLIERS += MOP_UP_MULTIPLIER;
     }
 
