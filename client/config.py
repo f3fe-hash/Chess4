@@ -2,7 +2,7 @@ import os
 import math
 
 
-SERVER_HOST = os.getenv("CHESS_SERVER_HOST", "192.168.68.61")
+SERVER_HOST = os.getenv("CHESS_SERVER_HOST", "127.0.0.1")
 SERVER_PORT = int(os.getenv("CHESS_SERVER_PORT", "8080"))
 
 ENGINE_MOVE_TIME_MS = 1000
