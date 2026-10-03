@@ -17,6 +17,19 @@ TEST(Bot, StartingPositionEvaluationIsBalanced)
 }
 
 
+TEST(Bot, QuiescenceSearchTakesFreeQueen)
+{
+    auto board = std::make_shared<ChessBoard>();
+    board->LoadFEN("4k3/8/8/4q3/8/8/4R3/4K3 w - - 0 1");
+    ChessBot bot(board);
+
+    const Evaluation staticEvaluation = bot.EvaluateRaw();
+    const Evaluation quiescenceEvaluation = bot.Evaluate();
+
+    EXPECT_GT(quiescenceEvaluation, staticEvaluation + 500);
+}
+
+
 TEST(Bot, SearchIsRepeatableOnTacticalPosition) 
 {
     auto board = std::make_shared<ChessBoard>();

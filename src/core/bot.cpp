@@ -877,7 +877,9 @@ MoveResult ChessBot::EvaluateRootMove(const SearchParams& params)
     MoveResult result{};
     result.move = params.move;
     result.eval = SearchCore(params);
-    result.nodes_searched = nodes_searched.load(std::memory_order_relaxed);
+    result.nodes_searched =
+        nodes_searched.load(std::memory_order_relaxed) +
+        evaluator.GetQuiescenceNodeCount();
     return result;
 }
 
@@ -888,26 +890,23 @@ MoveResult ChessBot::EvaluateRootMove(const SearchParams& params)
 
 MoveResult ChessBot::Search(int min_depth, int max_depth)
 {
-    // Checkmate / stalemate
-    if (board->IsCheckMate() || board->IsStaleMate())
-    {
-        return MoveResult{};
-    }
-
     nodes_searched.store(0, std::memory_order_relaxed);
+    evaluator.ResetQuiescenceNodeCount();
     time_up = false;
     stop_requested.store(false);
     worker_time_up.store(false);
     search_start = std::chrono::steady_clock::now();
 
-    std::vector<Move> moves = board->GetLegalMoves();
+    std::vector<Move>& moves = search_move_buffers[0];
+    board->GetLegalMoves(moves);
 
     MoveResult best_move{};
 
     if (moves.empty())
     {
         best_move.nodes_searched =
-            nodes_searched.load(std::memory_order_relaxed);
+            nodes_searched.load(std::memory_order_relaxed) +
+            evaluator.GetQuiescenceNodeCount();
 
         return best_move;
     }
@@ -1100,7 +1099,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
     // --------------------------------------------------------
 
     best_move.nodes_searched =
-        nodes_searched.load(std::memory_order_relaxed);
+        nodes_searched.load(std::memory_order_relaxed) +
+        evaluator.GetQuiescenceNodeCount();
 
     best_move.depth = best_depth;
 
@@ -1182,7 +1182,11 @@ Evaluation ChessBot::MainSearch(
     // be recognized even when depth == 0.
     // --------------------------------------------------------
 
-    std::vector<Move> moves = board->GetLegalMoves();
+    std::vector<Move> overflow_moves;
+    std::vector<Move>& moves = ply < static_cast<int>(search_move_buffers.size())
+        ? search_move_buffers[ply]
+        : overflow_moves;
+    board->GetLegalMoves(moves);
 
     bool maximizing = board->GetTurnColor() == TURN_WHITE;
 

@@ -145,6 +145,47 @@ TEST(Board, EnPassantAndHashRoundTrip)
 }
 
 
+TEST(Board, CaptureGenerationMatchesLegalMoveFilter)
+{
+    const std::vector<std::string> fens = {
+        "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1",
+        "1r2k3/P7/8/8/8/8/8/4K3 w - - 0 1",
+        "r3k2r/ppp2ppp/2n1bn2/3pp3/3PP3/2N1BN2/PPP2PPP/R3K2R w KQkq - 0 1"
+    };
+
+    ChessBoard board;
+    std::vector<Move> captures;
+    captures.emplace_back();
+    std::vector<Move> reusableMoves;
+    reusableMoves.emplace_back();
+
+    for (const std::string& fen : fens)
+    {
+        ASSERT_TRUE(board.LoadFEN(fen));
+        const std::vector<Move> legalMoves = board.GetLegalMoves();
+
+        board.GetLegalMoves(reusableMoves);
+        EXPECT_EQ(reusableMoves.size(), legalMoves.size());
+
+        std::vector<Move> expected;
+        for (const Move& move : legalMoves)
+        {
+            if (move.IsCapture())
+                expected.push_back(move);
+        }
+
+        board.GetLegalCaptures(captures);
+        EXPECT_EQ(captures.size(), expected.size());
+        for (const Move& expectedMove : expected)
+        {
+            EXPECT_NE(
+                std::find(captures.begin(), captures.end(), expectedMove),
+                captures.end());
+        }
+    }
+}
+
+
 TEST(Board, PromotionGeneratesAllChoices)
 {
     ChessBoard board;

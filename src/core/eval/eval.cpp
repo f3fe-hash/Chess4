@@ -605,50 +605,41 @@ Evaluation ChessBoardEvaluator::EvaluatePosition()
 }
 
 
-thread_local size_t qsearch_nodes = 0;
-
 Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
     Evaluation alpha,
     Evaluation beta,
-    int depth
+    int depth,
+    int ply
 )
 {
-    ++qsearch_nodes;
-
-    Move tt_move{};
-    const ZobristHash key = board->GetZobristHash();
-
-    bool found;
-    const TranspositionTableEntry entry = transposition_table->GetEntry(key, found);
-    if (found)
-    {
-        tt_move = entry.best_move;
-    }
+    ++quiescence_nodes;
 
     if (board->IsCheck())
     {
-        auto moves = board->GetLegalMoves();
+        std::vector<Move> overflow_moves;
+        std::vector<Move>& moves =
+            ply < static_cast<int>(quiescence_move_buffers.size())
+                ? quiescence_move_buffers[ply]
+                : overflow_moves;
+        board->GetLegalMoves(moves);
         const bool maximizing = board->GetTurnColor() == TURN_WHITE;
 
         if (moves.empty())
             return maximizing ? -CHECKMATE_SCORE : CHECKMATE_SCORE;
 
+        move_orderer->OrderMoves(moves, 0, ply);
+
         for (int move_idx = 0;
              move_idx < static_cast<int>(moves.size());
              ++move_idx)
         {
-            Move move = move_orderer->PickBestMove(
-                moves,
-                move_idx,
-                tt_move,
-                0
-            );
+            Move move = moves[move_idx];
 
             // `MakeMove` edits `move` with castling rights, promption flags, etc. for `UndoMove`
             board->MakeMove(move);
 
             const Evaluation score =
-                QuiescenceSearchMain(alpha, beta, depth - 1);
+                QuiescenceSearchMain(alpha, beta, depth - 1, ply + 1);
 
             board->UndoMove(move);
 
@@ -688,27 +679,28 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
         beta = std::min(beta, stand_pat);
     }
 
-    if (board->HasPseudoLegalCapture())
+    if (!board->HasPseudoLegalCapture())
         return maximizing ? alpha : beta;
 
-    auto captures = board->GetLegalCaptures();
+    std::vector<Move> overflow_captures;
+    std::vector<Move>& captures =
+        ply < static_cast<int>(quiescence_move_buffers.size())
+            ? quiescence_move_buffers[ply]
+            : overflow_captures;
+    board->GetLegalCaptures(captures);
+    move_orderer->OrderMoves(captures, 0, ply);
 
     for (int move_idx = 0;
          move_idx < static_cast<int>(captures.size());
          ++move_idx)
     {
-        Move move = move_orderer->PickBestMove(
-            captures,
-            move_idx,
-            tt_move,
-            0
-        );
+        Move move = captures[move_idx];
 
         // `MakeMove` edits `move` with castling rights, promption flags, etc. for `UndoMove`
         board->MakeMove(move);
 
         const Evaluation score =
-            QuiescenceSearchMain(alpha, beta, depth - 1);
+            QuiescenceSearchMain(alpha, beta, depth - 1, ply + 1);
 
         board->UndoMove(move);
 
@@ -732,12 +724,10 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
 
 Evaluation ChessBoardEvaluator::QuiescenceSearch()
 {
-    qsearch_nodes = 0;
-
     Evaluation alpha = INT_MIN;
     Evaluation beta = INT_MAX;
 
-    return QuiescenceSearchMain(alpha, beta, 100);
+    return QuiescenceSearchMain(alpha, beta, 100, 0);
 }
 
 

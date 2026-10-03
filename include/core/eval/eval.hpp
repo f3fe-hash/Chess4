@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
+#include <vector>
 
 #include <memory>
 #include <unordered_map>
@@ -23,6 +25,8 @@ class ChessBoardEvaluator
     std::shared_ptr<ChessBoard> board;
     std::shared_ptr<TranspositionTable> transposition_table;
     std::shared_ptr<MoveOrder> move_orderer;
+    std::array<std::vector<Move>, 128> quiescence_move_buffers;
+    std::uint64_t quiescence_nodes = 0;
 
 #ifdef USE_EXPR_AI
     EvalModel model;
@@ -36,7 +40,8 @@ class ChessBoardEvaluator
     Evaluation QuiescenceSearchMain(
         Evaluation alpha,
         Evaluation beta,
-        int depth);
+        int depth,
+        int ply);
 
 public:
     //ChessBoardEvaluator() {} // default constructor
@@ -56,6 +61,10 @@ public:
     // Position evaluation.
     Evaluation EvaluatePosition();
     Evaluation QuiescenceSearch();
+    void ResetQuiescenceNodeCount()
+    { quiescence_nodes = 0; }
+    std::uint64_t GetQuiescenceNodeCount() const
+    { return quiescence_nodes; }
 
     // Game phase
     inline int GetEndgamePhase() const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <vector>
 
 #include <memory>
@@ -100,6 +101,7 @@ class ChessBot
     std::shared_ptr<KillerMoves> killer_moves;
     std::shared_ptr<MoveOrder> move_orderer;
     ChessBoardEvaluator evaluator;
+    std::array<std::vector<Move>, 128> search_move_buffers;
 
     std::atomic<uint64_t> nodes_searched{0};
 

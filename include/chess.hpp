@@ -269,6 +269,7 @@ class ChessBoard
     void GetLegalPawnAttacks(std::vector<Move>& moves);
     void GetLegalKnightAttacks(std::vector<Move>& moves);
     void GetLegalBishopAttacks(std::vector<Move>& moves);
+    void GetLegalRookAttacks(std::vector<Move>& moves);
     void GetLegalQueenAttacks(std::vector<Move>& moves);
     void GetLegalKingAttacks(std::vector<Move>& moves);
 
@@ -278,6 +279,7 @@ class ChessBoard
     void GetLegalRookMoves(std::vector<Move>& moves);
     void GetLegalQueenMoves(std::vector<Move>& moves);
     void GetLegalKingMoves(std::vector<Move>& moves);
+    void FilterLegalMoves(std::vector<Move>& moves, bool captures_only);
 
     void AddCastlingMoves(
         std::vector<Move>& moves,
@@ -317,6 +319,8 @@ public:
 
     std::vector<Move> GetLegalMoves();
     std::vector<Move> GetLegalCaptures();
+    void GetLegalMoves(std::vector<Move>& moves);
+    void GetLegalCaptures(std::vector<Move>& moves);
 
     void GetNumLegalMovesAndCaptures(size_t& moves_count, size_t& captures_count) const;
 
