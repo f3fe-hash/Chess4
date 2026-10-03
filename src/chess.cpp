@@ -250,12 +250,17 @@ ChessBoard::ChessBoard()
     {
         occupancy_bitboards[i] = 0ULL;
         attack_bitboards[i] = 0ULL;
+        for (int square = 0; square < 64; ++square)
+            attack_count_by_piece[i][square] = 0;
     }
 
     occupancy_bitboard_white = 0ULL;
     occupancy_bitboard_black = 0ULL;
     attack_bitboard_white = 0ULL;
     attack_bitboard_black = 0ULL;
+    for (int color = 0; color < 2; ++color)
+        for (int square = 0; square < 64; ++square)
+            attack_count_by_color[color][square] = 0;
     turn = TURN_WHITE;
 
     castling_rights = CastlingRights(CASTLE_WK | CASTLE_WQ | CASTLE_BK | CASTLE_BQ);
@@ -591,70 +596,153 @@ void ChessBoard::UpdateAttackBitboards()
 
 void ChessBoard::UpdateAttackBitboardsOnly()
 {
-    Bitboard occupancy = occupancy_bitboard_white | occupancy_bitboard_black;
-
     attack_bitboard_white = 0ULL;
     attack_bitboard_black = 0ULL;
 
     for (int i = 0; i < 32; ++i)
-        attack_bitboards[i] = 0ULL;
-
-    const auto addAttacks = [&](const Piece piece)
     {
-        Bitboard pieces = occupancy_bitboards[piece];
-        while (pieces)
-        {
-            const Square square = PopLSB(pieces);
-            Bitboard attacks = 0ULL;
+        attack_bitboards[i] = 0ULL;
+        for (int square = 0; square < 64; ++square)
+            attack_count_by_piece[i][square] = 0;
+    }
 
-            switch (get_piece_type(piece))
-            {
-                case PIECE_TYPE_PAWN:
-                    attacks = pawn_attack_lookup[
-                        (piece & PIECE_COLOR_WHITE) == 0][square];
-                    break;
+    for (int color = 0; color < 2; ++color)
+        for (int square = 0; square < 64; ++square)
+            attack_count_by_color[color][square] = 0;
 
-                case PIECE_TYPE_KNIGHT:
-                    attacks = knight_attack_lookup[square];
-                    break;
+    for (Square square = 0; square < 64; ++square)
+    {
+        const Piece piece = pieces[square];
+        if (piece != NULL_PIECE)
+            ChangeAttackContributions(SquareMask(square), true);
+    }
+}
 
-                case PIECE_TYPE_BISHOP:
-                    attacks = SlidingAttacks(square, occupancy, true);
-                    break;
 
-                case PIECE_TYPE_ROOK:
-                    attacks = SlidingAttacks(square, occupancy, false);
-                    break;
+Bitboard ChessBoard::GetPieceAttacks(
+    const Piece piece,
+    const Square square) const
+{
+    const Bitboard occupancy =
+        occupancy_bitboard_white | occupancy_bitboard_black;
 
-                case PIECE_TYPE_QUEEN:
-                    attacks = SlidingAttacks(square, occupancy, true) |
-                        SlidingAttacks(square, occupancy, false);
-                    break;
+    switch (get_piece_type(piece))
+    {
+        case PIECE_TYPE_PAWN:
+            return pawn_attack_lookup[
+                (piece & PIECE_COLOR_WHITE) == 0][square];
 
-                case PIECE_TYPE_KING:
-                    attacks = king_attack_lookup[square];
-                    break;
+        case PIECE_TYPE_KNIGHT:
+            return knight_attack_lookup[square];
 
-                default:
-                    break;
-            }
+        case PIECE_TYPE_BISHOP:
+            return SlidingAttacks(square, occupancy, true);
 
-            attack_bitboards[piece] |= attacks;
-            if (piece & PIECE_COLOR_WHITE)
-                attack_bitboard_white |= attacks;
-            else
-                attack_bitboard_black |= attacks;
-        }
+        case PIECE_TYPE_ROOK:
+            return SlidingAttacks(square, occupancy, false);
+
+        case PIECE_TYPE_QUEEN:
+            return SlidingAttacks(square, occupancy, true) |
+                SlidingAttacks(square, occupancy, false);
+
+        case PIECE_TYPE_KING:
+            return king_attack_lookup[square];
+
+        default:
+            return 0ULL;
+    }
+}
+
+
+Bitboard ChessBoard::GetAffectedAttackSquares(
+    const Square* changed_squares,
+    const size_t changed_count) const
+{
+    static constexpr int directions[8][2] = {
+        {1, 0}, {-1, 0}, {0, 1}, {0, -1},
+        {1, 1}, {1, -1}, {-1, 1}, {-1, -1}
     };
 
-    for (int color : { PIECE_COLOR_WHITE, PIECE_COLOR_BLACK })
+    Bitboard affected = 0ULL;
+    for (size_t index = 0; index < changed_count; ++index)
     {
-        addAttacks(PIECE_TYPE_PAWN | color);
-        addAttacks(PIECE_TYPE_KNIGHT | color);
-        addAttacks(PIECE_TYPE_BISHOP | color);
-        addAttacks(PIECE_TYPE_ROOK | color);
-        addAttacks(PIECE_TYPE_QUEEN | color);
-        addAttacks(PIECE_TYPE_KING | color);
+        const Square changed = changed_squares[index];
+        affected |= SquareMask(changed);
+
+        const int x = get_piece_x(changed);
+        const int y = get_piece_y(changed);
+        for (const auto& direction : directions)
+        {
+            int targetX = x + direction[0];
+            int targetY = y + direction[1];
+            while (IsOnBoard(targetX, targetY))
+            {
+                const Square target = FlattenSquare(targetX, targetY);
+                const Piece piece = pieces[target];
+                const bool diagonal = direction[0] != 0 && direction[1] != 0;
+                const Piece type = get_piece_type(piece);
+                if (type == PIECE_TYPE_QUEEN ||
+                    (diagonal && type == PIECE_TYPE_BISHOP) ||
+                    (!diagonal && type == PIECE_TYPE_ROOK))
+                {
+                    affected |= SquareMask(target);
+                }
+
+                targetX += direction[0];
+                targetY += direction[1];
+            }
+        }
+    }
+
+    return affected;
+}
+
+
+void ChessBoard::ChangeAttackContributions(
+    const Bitboard squares,
+    const bool add)
+{
+    Bitboard remaining = squares;
+    while (remaining)
+    {
+        const Square square = PopLSB(remaining);
+        const Piece piece = pieces[square];
+        if (piece == NULL_PIECE)
+            continue;
+
+        const int color = (piece & PIECE_COLOR_WHITE) ? 0 : 1;
+        Bitboard attacks = GetPieceAttacks(piece, square);
+        while (attacks)
+        {
+            const Square target = PopLSB(attacks);
+            uint8_t& pieceCount = attack_count_by_piece[piece][target];
+            uint8_t& colorCount = attack_count_by_color[color][target];
+
+            if (add)
+            {
+                if (pieceCount++ == 0)
+                    attack_bitboards[piece] |= SquareMask(target);
+                if (colorCount++ == 0)
+                {
+                    if (color == 0)
+                        attack_bitboard_white |= SquareMask(target);
+                    else
+                        attack_bitboard_black |= SquareMask(target);
+                }
+            }
+            else
+            {
+                if (--pieceCount == 0)
+                    attack_bitboards[piece] &= ~SquareMask(target);
+                if (--colorCount == 0)
+                {
+                    if (color == 0)
+                        attack_bitboard_white &= ~SquareMask(target);
+                    else
+                        attack_bitboard_black &= ~SquareMask(target);
+                }
+            }
+        }
     }
 }
 
@@ -975,6 +1063,28 @@ void ChessBoard::MakeMove(Move& move)
 
     move.flags = flags;
 
+    Square changedSquares[6] = { move.from, move.to };
+    size_t changedCount = 2;
+    if (move.flags & MOVE_EN_PASSANT)
+    {
+        changedSquares[changedCount++] = FlattenSquare(
+            get_piece_x(move.to), get_piece_y(move.from));
+    }
+    if (move.flags & MOVE_CASTLE_KINGSIDE)
+    {
+        changedSquares[changedCount++] = movingWhite ? SQ_H1 : SQ_H8;
+        changedSquares[changedCount++] = movingWhite ? SQ_F1 : SQ_F8;
+    }
+    else if (move.flags & MOVE_CASTLE_QUEENSIDE)
+    {
+        changedSquares[changedCount++] = movingWhite ? SQ_A1 : SQ_A8;
+        changedSquares[changedCount++] = movingWhite ? SQ_D1 : SQ_D8;
+    }
+
+    const Bitboard affectedAttackSquares =
+        GetAffectedAttackSquares(changedSquares, changedCount);
+    ChangeAttackContributions(affectedAttackSquares, false);
+
     // ------------------------------------------------------------
     // Remove original piece from its old square.
     // ------------------------------------------------------------
@@ -1196,12 +1306,7 @@ void ChessBoard::MakeMove(Move& move)
 
     fullmove_number += turn == TURN_BLACK;
 
-    UpdateOccupancyBitboards();
-    UpdateAttackBitboards();
-
-    // Recompute from the actual board state so the hash stays
-    // consistent with the board and undo logic.
-    zobrist_hash = GenerateZobristHash();
+    ChangeAttackContributions(affectedAttackSquares, true);
     history.push_back(zobrist_hash);
 }
 
@@ -1211,6 +1316,28 @@ void ChessBoard::UndoMove(Move move)
     bool movingWhite = (turn == TURN_BLACK);
 
     Piece movedPiece = move.moved;
+
+    Square changedSquares[6] = { move.from, move.to };
+    size_t changedCount = 2;
+    if (move.flags & MOVE_EN_PASSANT)
+    {
+        changedSquares[changedCount++] = FlattenSquare(
+            get_piece_x(move.to), get_piece_y(move.from));
+    }
+    if (move.flags & MOVE_CASTLE_KINGSIDE)
+    {
+        changedSquares[changedCount++] = movingWhite ? SQ_H1 : SQ_H8;
+        changedSquares[changedCount++] = movingWhite ? SQ_F1 : SQ_F8;
+    }
+    else if (move.flags & MOVE_CASTLE_QUEENSIDE)
+    {
+        changedSquares[changedCount++] = movingWhite ? SQ_A1 : SQ_A8;
+        changedSquares[changedCount++] = movingWhite ? SQ_D1 : SQ_D8;
+    }
+
+    const Bitboard affectedAttackSquares =
+        GetAffectedAttackSquares(changedSquares, changedCount);
+    ChangeAttackContributions(affectedAttackSquares, false);
 
     // If the move was a promotion, restore a pawn.
     Piece restoredPiece = movedPiece;
@@ -1484,9 +1611,7 @@ void ChessBoard::UndoMove(Move move)
 
     fullmove_number -= turn == TURN_WHITE;
 
-    UpdateOccupancyBitboards();
-    UpdateAttackBitboards();
-    zobrist_hash = GenerateZobristHash();
+    ChangeAttackContributions(affectedAttackSquares, true);
 
     (void) history.pop_back();
 }

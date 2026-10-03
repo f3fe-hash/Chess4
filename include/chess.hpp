@@ -239,6 +239,8 @@ class ChessBoard
     Bitboard attack_bitboards[32];
     Bitboard attack_bitboard_white;
     Bitboard attack_bitboard_black;
+    uint8_t attack_count_by_piece[32][64];
+    uint8_t attack_count_by_color[2][64];
 
     TurnColor turn;
 
@@ -256,6 +258,11 @@ class ChessBoard
     void UpdateOccupancyBitboards();
     void UpdateAttackBitboards();
     void UpdateAttackBitboardsOnly();
+    Bitboard GetPieceAttacks(Piece piece, Square square) const;
+    Bitboard GetAffectedAttackSquares(
+        const Square* changed_squares,
+        size_t changed_count) const;
+    void ChangeAttackContributions(Bitboard squares, bool add);
 
     void ComputeAttackLookupBitboards();
 

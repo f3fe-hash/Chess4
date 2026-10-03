@@ -1078,6 +1078,7 @@ TEST(Board, EveryLegalMoveRoundTrips)
 
         ASSERT_TRUE(board.LoadFEN(fen));
 
+        const std::string initialFen = board.GetFEN();
         const uint64_t initialHash =
             board.GetZobristHash();
 
@@ -1088,11 +1089,19 @@ TEST(Board, EveryLegalMoveRoundTrips)
         {
             Move move_copy = move;
             board.MakeMove(move_copy);
+            EXPECT_EQ(
+                board.GetZobristHash(),
+                board.GenerateZobristHash());
+
             board.UndoMove(move_copy);
 
             EXPECT_EQ(
                 board.GetZobristHash(),
                 initialHash);
+            EXPECT_EQ(board.GetFEN(), initialFen);
+            EXPECT_EQ(
+                board.GetZobristHash(),
+                board.GenerateZobristHash());
 
             const auto movesAfterUndo =
                 board.GetLegalMoves();
