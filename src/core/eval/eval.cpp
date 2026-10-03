@@ -614,7 +614,16 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
 {
     ++quiescence_nodes;
 
-    if (board->IsCheck())
+    const ZobristHash position_key = board->GetZobristHash();
+    for (int ancestor = ply - 1; ancestor >= 0; --ancestor)
+    {
+        if (quiescence_hash_stack[ancestor] == position_key)
+            return 0;
+    }
+    quiescence_hash_stack[ply] = position_key;
+
+    const bool in_check = board->IsCheck();
+    if (in_check)
     {
         std::vector<Move> overflow_moves;
         std::vector<Move>& moves =
@@ -628,6 +637,34 @@ Evaluation ChessBoardEvaluator::QuiescenceSearchMain(
             return maximizing ? -CHECKMATE_SCORE : CHECKMATE_SCORE;
 
         move_orderer->OrderMoves(moves, 0, ply);
+
+        if (depth <= 0)
+        {
+            Evaluation best = maximizing ? INT_MIN : INT_MAX;
+            for (Move move : moves)
+            {
+                board->MakeMove(move);
+                const Evaluation score = EvaluatePosition();
+                board->UndoMove(move);
+
+                if (maximizing)
+                {
+                    if (score >= beta)
+                        return score;
+                    best = std::max(best, score);
+                    alpha = std::max(alpha, score);
+                }
+                else
+                {
+                    if (score <= alpha)
+                        return score;
+                    best = std::min(best, score);
+                    beta = std::min(beta, score);
+                }
+            }
+
+            return best;
+        }
 
         for (int move_idx = 0;
              move_idx < static_cast<int>(moves.size());
@@ -727,7 +764,8 @@ Evaluation ChessBoardEvaluator::QuiescenceSearch()
     Evaluation alpha = INT_MIN;
     Evaluation beta = INT_MAX;
 
-    return QuiescenceSearchMain(alpha, beta, 100, 0);
+    constexpr int MAX_QUIESCENCE_DEPTH = 4;
+    return QuiescenceSearchMain(alpha, beta, MAX_QUIESCENCE_DEPTH, 0);
 }
 
 

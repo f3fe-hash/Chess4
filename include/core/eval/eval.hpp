@@ -26,6 +26,7 @@ class ChessBoardEvaluator
     std::shared_ptr<TranspositionTable> transposition_table;
     std::shared_ptr<MoveOrder> move_orderer;
     std::array<std::vector<Move>, 128> quiescence_move_buffers;
+    std::array<ZobristHash, 128> quiescence_hash_stack{};
     std::uint64_t quiescence_nodes = 0;
 
 #ifdef USE_EXPR_AI

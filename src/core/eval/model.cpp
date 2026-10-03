@@ -2,6 +2,8 @@
 #include <onnx/onnx_pb.h>
 
 #include <fstream>
+#include <algorithm>
+#include <utility>
 #include <stdexcept>
 #include <string>
 
@@ -362,49 +364,40 @@ void EvalModel::LoadModel()
 EvalModel::EvalModel(
     std::shared_ptr<ChessBoard> board
 )
-    : board(std::move(board))
+    : board(std::move(board)),
+      buckets(std::make_unique<Bucket[]>(NUM_BUCKETS))
 {
     LoadModel();
 }
 
 
-std::array<float, INPUT_SIZE>
-EvalModel::GetBoard() const
+float EvalModel::Forward() const
 {
-    std::array<float, INPUT_SIZE> output{};
-
+    std::array<std::pair<std::size_t, float>, 64> activeFeatures{};
+    std::size_t activeFeatureCount = 0;
     for (Square square = 0; square < 64; ++square)
     {
-        const Piece piece =
-            board->GetPieceAt(square);
-
+        const Piece piece = board->GetPieceAt(square);
         if (piece == NULL_PIECE)
             continue;
 
-        const std::size_t plane =
-            GetPlane(piece);
-
-        const bool white =
-            get_piece_color(piece) ==
-            PIECE_COLOR_WHITE;
-
-        const float value =
-            white ? 1.0F : -1.0F;
-
-        output[
-            plane * 64 +
-            static_cast<std::size_t>(square)
-        ] = value;
+        const std::size_t featureIndex =
+            GetPlane(piece) * 64 + square;
+        const float featureValue =
+            get_piece_color(piece) == PIECE_COLOR_WHITE ? 1.0F : -1.0F;
+        activeFeatures[activeFeatureCount++] = {
+            featureIndex,
+            featureValue
+        };
     }
+    std::sort(
+        activeFeatures.begin(),
+        activeFeatures.begin() + activeFeatureCount,
+        [](const auto& left, const auto& right)
+        {
+            return left.first < right.first;
+        });
 
-    return output;
-}
-
-
-float EvalModel::Forward(
-    const std::array<float, INPUT_SIZE>& input
-) const
-{
     Hidden1Array hidden1{};
 
     // --------------------------------------------------------
@@ -424,16 +417,16 @@ float EvalModel::Forward(
         float sum =
             weights.bias1[output];
 
-        for (std::size_t input_index = 0;
-             input_index < INPUT_SIZE;
-             ++input_index)
+        for (std::size_t feature = 0;
+             feature < activeFeatureCount;
+             ++feature)
         {
             sum +=
                 weights.layer1[
                     output * INPUT_SIZE +
-                    input_index
+                    activeFeatures[feature].first
                 ] *
-                input[input_index];
+                activeFeatures[feature].second;
         }
 
         hidden1[output] =
@@ -559,10 +552,6 @@ Evaluation EvalModel::Evaluate()
         return cached;
 
 
-    const auto input =
-        GetBoard();
-
-
     // ONNX Runtime is NOT involved here.
     //
     // Forward() performs:
@@ -571,8 +560,7 @@ Evaluation EvalModel::Evaluate()
     //      -> 4 -> LeakyReLU
     //      -> 1
     //
-    const float output =
-        Forward(input);
+    const float output = Forward();
 
 
     const Evaluation cp =

@@ -21,9 +21,6 @@ constexpr std::size_t NUM_BUCKETS = 131072;
 class EvalModel
 {
 private:
-    using InputArray =
-        std::array<float, INPUT_SIZE>;
-
     using Hidden1Array =
         std::array<float, HIDDEN1_SIZE>;
 
@@ -74,7 +71,7 @@ private:
 
     Weights weights{};
 
-    Bucket buckets[NUM_BUCKETS];
+    std::unique_ptr<Bucket[]> buckets;
 
 
     static constexpr float LEAKY_RELU_1 = 0.6F;
@@ -96,11 +93,7 @@ private:
     void LoadModel();
 
 
-    InputArray GetBoard() const;
-
-    float Forward(
-        const InputArray& input
-    ) const;
+    float Forward() const;
 
 
     void Store(

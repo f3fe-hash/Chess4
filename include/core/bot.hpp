@@ -67,6 +67,8 @@ struct MoveResult
     Move move{};
     Evaluation eval = 0.00;
     uint64_t nodes_searched = 0;
+    uint64_t main_nodes_searched = 0;
+    uint64_t quiescence_nodes_searched = 0;
     int64_t mate_in_ply = -2; // < 0 means no mate was found
     int depth = 0;
 };

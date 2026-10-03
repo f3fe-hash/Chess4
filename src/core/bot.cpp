@@ -904,9 +904,13 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 
     if (moves.empty())
     {
-        best_move.nodes_searched =
-            nodes_searched.load(std::memory_order_relaxed) +
+        best_move.main_nodes_searched =
+            nodes_searched.load(std::memory_order_relaxed);
+        best_move.quiescence_nodes_searched =
             evaluator.GetQuiescenceNodeCount();
+        best_move.nodes_searched =
+            best_move.main_nodes_searched +
+            best_move.quiescence_nodes_searched;
 
         return best_move;
     }
@@ -947,6 +951,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         MoveResult depth_move = best_move;
 
         bool depth_completed = true;
+        Evaluation root_alpha = INT32_MIN;
+        Evaluation root_beta = INT32_MAX;
 
         // ----------------------------------------------------
         // Root TT move.
@@ -966,7 +972,7 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
         }
     
 #ifdef ORDER_MOVES
-        move_orderer->OrderMoves(moves, 0, 0);
+    move_orderer->OrderMoves(moves, depth - 1, 0);
 #endif
 
         // ----------------------------------------------------
@@ -1009,8 +1015,8 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
 #endif
 
             SearchParams params = {
-                .alpha          = static_cast<Evaluation>(INT32_MIN),
-                .beta           = static_cast<Evaluation>(INT32_MAX),
+                .alpha          = root_alpha,
+                .beta           = root_beta,
                 .depth          = depth,
                 .ply            = 0,
                 .move           = move,
@@ -1040,6 +1046,11 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
                 depth_eval = result.eval;
                 depth_move = result;
             }
+
+            if (maximizing)
+                root_alpha = std::max(root_alpha, depth_eval);
+            else
+                root_beta = std::min(root_beta, depth_eval);
         }
 
         // ----------------------------------------------------
@@ -1063,6 +1074,15 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
             best_depth = depth;
 
             best_move.eval = depth_eval;
+
+            transposition_table->SetExact(
+                root_key,
+                NormalizeMateScore(depth_eval, 0),
+                depth);
+            transposition_table->SetBestMove(
+                root_key,
+                depth_move.move,
+                depth);
 
 #ifdef DEBUG
             const uint64_t completed_nodes =
@@ -1098,9 +1118,13 @@ MoveResult ChessBot::Search(int min_depth, int max_depth)
     // Final result.
     // --------------------------------------------------------
 
-    best_move.nodes_searched =
-        nodes_searched.load(std::memory_order_relaxed) +
+    best_move.main_nodes_searched =
+        nodes_searched.load(std::memory_order_relaxed);
+    best_move.quiescence_nodes_searched =
         evaluator.GetQuiescenceNodeCount();
+    best_move.nodes_searched =
+        best_move.main_nodes_searched +
+        best_move.quiescence_nodes_searched;
 
     best_move.depth = best_depth;
 

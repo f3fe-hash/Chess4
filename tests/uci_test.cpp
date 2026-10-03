@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include "interface/uci.hpp"
 
@@ -53,6 +54,20 @@ TEST(UCI, GoStopReturnsBestMove)
     const std::string response = uci->Respond("stop");
     EXPECT_NE(response.find("bestmove "), std::string::npos);
     EXPECT_FALSE(uci->IsSearching());
+}
+
+
+TEST(UCI, GoDepthUsesTrailingArgument)
+{
+    auto uci = MakeUCI();
+
+    EXPECT_EQ(uci->Respond("go depth 2"), "");
+    while (uci->IsSearching())
+        std::this_thread::yield();
+
+    const std::string response = uci->TakeOutput();
+    EXPECT_NE(response.find("info depth 2"), std::string::npos);
+    EXPECT_NE(response.find("bestmove "), std::string::npos);
 }
 
 

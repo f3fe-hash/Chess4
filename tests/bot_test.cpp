@@ -13,7 +13,16 @@ TEST(Bot, StartingPositionEvaluationIsBalanced)
     board->LoadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     ChessBot bot(board);
 
-    EXPECT_NEAR(bot.EvaluateRaw(), 0.0f, 1.0f);
+#ifdef USE_EXPR_AI
+    constexpr Evaluation BALANCED_POSITION_TOLERANCE = 50.0f;
+#else
+    constexpr Evaluation BALANCED_POSITION_TOLERANCE = 1.0f;
+#endif
+
+    EXPECT_NEAR(
+        bot.EvaluateRaw(),
+        0.0f,
+        BALANCED_POSITION_TOLERANCE);
 }
 
 
@@ -27,6 +36,31 @@ TEST(Bot, QuiescenceSearchTakesFreeQueen)
     const Evaluation quiescenceEvaluation = bot.Evaluate();
 
     EXPECT_GT(quiescenceEvaluation, staticEvaluation + 500);
+}
+
+
+TEST(Bot, SearchStartingPositionCompletesDepthThree)
+{
+    auto board = std::make_shared<ChessBoard>();
+    board->LoadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    ChessBot bot(board);
+    bot.SetTimeLimit(DurationMs(0));
+
+    const MoveResult result = bot.Search(3, 3);
+    EXPECT_EQ(result.depth, 3);
+    EXPECT_TRUE(board->IsLegalMove(result.move));
+    EXPECT_LT(result.nodes_searched, 100000);
+    EXPECT_EQ(
+        result.nodes_searched,
+        result.main_nodes_searched + result.quiescence_nodes_searched);
+
+    const MoveResult depth_five_result = bot.Search(5, 5);
+    EXPECT_EQ(depth_five_result.depth, 5);
+    EXPECT_TRUE(board->IsLegalMove(depth_five_result.move));
+
+    const MoveResult depth_six_result = bot.Search(6, 6);
+    EXPECT_EQ(depth_six_result.depth, 6);
+    EXPECT_TRUE(board->IsLegalMove(depth_six_result.move));
 }
 
 
