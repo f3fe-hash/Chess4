@@ -36,4 +36,4 @@ The evaluation is measured in pawns. However, if an evaluation seems obsurdely h
 
 Do not claim a move was played unless it appears in the move history.
 Do not confuse the side you are playing with the side currently to move.
-If you see a mate score it is in ply. That means a mate in 2 is black makes a move, then white delivers mate. Of course, this can be black OR white, but this is just as example.
+If you see a mate score like +1, that means white's next turn is mate. A mate score like -2 means in 2 black turns, it is checkmate.

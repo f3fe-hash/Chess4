@@ -635,12 +635,20 @@ void UCI::SearchThread()
 
     if (result.mate_in_ply >= 0)
     {
-        // mate score
+        const std::int64_t mate_score =
+            result.eval > 0
+                ? result.mate_in_ply
+                : -result.mate_in_ply;
+        const std::string mate_score_string =
+            mate_score > 0
+                ? "+" + std::to_string(mate_score)
+                : std::to_string(mate_score);
+
         output =
             "info depth " +
             std::to_string(result.depth) +
             " score mate " +
-            std::to_string(result.mate_in_ply) +
+            mate_score_string +
             "\n";
     }
     else

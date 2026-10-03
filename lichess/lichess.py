@@ -232,6 +232,19 @@ class LichessAPI:
         finally:
             response.close()
 
+    def get_playing_games(self) -> list[dict]:
+        response = self._request(
+            "GET",
+            f"{LICHESS_API}/api/account/playing",
+            timeout=30,
+            params={"nb": MAX_GAMES},
+        )
+
+        try:
+            return response.json().get("nowPlaying", [])
+        finally:
+            response.close()
+
     def _stream(self, url: str):
         """
         Yield newline-delimited JSON and automatically reconnect after
@@ -568,11 +581,7 @@ class UCIClient:
                         # Mate score
                         elif score_type == "mate":
                             mate = int(score_value)
-
-                            if mate > 0:
-                                evaluation = f"mate +{mate}"
-                            else:
-                                evaluation = f"mate {mate}"
+                            evaluation = f"mate {mate:+d}"
 
                 except (ValueError, IndexError):
                     pass
@@ -1257,6 +1266,16 @@ class BotManager:
         with self.games_lock:
             return len(self.games)
 
+    def resume_playing_games(self) -> None:
+        for game in self.api.get_playing_games():
+            game_id = game.get("gameId")
+
+            if not game_id:
+                continue
+
+            log(f"Resuming active game: {game_id}")
+            self.start_game({"id": game_id})
+
     def start_game(self, game: dict) -> None:
         game_id = game.get("id")
 
@@ -1407,6 +1426,13 @@ def main() -> None:
         api,
         bot_id,
     )
+
+    try:
+        manager.resume_playing_games()
+    except requests.RequestException as exc:
+        log_error(
+            f"Could not discover active Lichess games: {exc}"
+        )
 
     log(
         f"Waiting for challenges/events "

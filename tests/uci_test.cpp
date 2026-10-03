@@ -71,6 +71,42 @@ TEST(UCI, GoDepthUsesTrailingArgument)
 }
 
 
+TEST(UCI, ReportsWhiteMateInOneAsPositiveMateScore)
+{
+    auto uci = MakeUCI();
+
+    EXPECT_EQ(
+        uci->Respond(
+            "position fen 7k/8/5KQ1/8/8/8/8/8 w - - 0 1"),
+        "");
+    EXPECT_EQ(uci->Respond("go depth 1"), "");
+
+    while (uci->IsSearching())
+        std::this_thread::yield();
+
+    const std::string response = uci->TakeOutput();
+    EXPECT_NE(response.find("score mate +1"), std::string::npos);
+}
+
+
+TEST(UCI, ReportsBlackMateInOneAsNegativeMateScore)
+{
+    auto uci = MakeUCI();
+
+    EXPECT_EQ(
+        uci->Respond(
+            "position fen 8/8/8/8/8/5kq1/8/7K b - - 0 1"),
+        "");
+    EXPECT_EQ(uci->Respond("go depth 1"), "");
+
+    while (uci->IsSearching())
+        std::this_thread::yield();
+
+    const std::string response = uci->TakeOutput();
+    EXPECT_NE(response.find("score mate -1"), std::string::npos);
+}
+
+
 TEST(UCI, PonderHitStopsPonderBudget)
 {
     auto uci = MakeUCI();
