@@ -334,15 +334,32 @@ const
     if (time <= 0)
         return DurationMs(1);
 
+    constexpr int64_t SAFETY_MARGIN_MS = 250;
+    constexpr double MAXIMUM_TIME_SECONDS = 20.0;
+
+    if (increment > 0)
+    {
+        constexpr double INCREMENT_USAGE = 0.95;
+        const int64_t increment_budget = static_cast<int64_t>(
+            increment * INCREMENT_USAGE);
+        const int64_t safe_budget = std::max<int64_t>(
+            1,
+            time - SAFETY_MARGIN_MS);
+        const int64_t maximum_budget = static_cast<int64_t>(
+            MAXIMUM_TIME_SECONDS * 1000.0);
+
+        return DurationMs(std::min({
+            increment_budget,
+            safe_budget,
+            maximum_budget
+        }));
+    }
+
     // --------------------------------------------------------
     // Configuration
     // --------------------------------------------------------
 
     constexpr double MINIMUM_TIME_SECONDS = 0.05;
-    constexpr double MAXIMUM_TIME_SECONDS = 20.0;
-
-    // Do not intentionally search all the way to the clock.
-    constexpr int64_t SAFETY_MARGIN_MS = 250;
 
     // Assume roughly this many moves for the initial time
     // allocation.
@@ -361,11 +378,6 @@ const
     // starting clock.
     constexpr double CLOCK_CORRECTION_STRENGTH = 0.35;
 
-    // Use most of the increment as part of the time budget.
-    // This prevents the clock from continuously accumulating
-    // time in increment games.
-    constexpr double INCREMENT_USAGE = 0.90;
-
     // --------------------------------------------------------
     // Convert to seconds.
     // --------------------------------------------------------
@@ -381,11 +393,6 @@ const
     const double opponent_seconds =
         static_cast<double>(
             std::max<int64_t>(0, opponent_time)
-        ) / 1000.0;
-
-    const double increment_seconds =
-        static_cast<double>(
-            std::max<int64_t>(0, increment)
         ) / 1000.0;
 
     // --------------------------------------------------------
@@ -444,29 +451,7 @@ const
             MAXIMUM_TIME_SECONDS
         );
 
-    // --------------------------------------------------------
-    // Increment.
-    // --------------------------------------------------------
-    //
-    // The increment is time that comes back after the move.
-    //
-    // If we spend substantially less than the increment, our
-    // clock grows indefinitely.
-    //
-    // Therefore, use most of the increment as part of the
-    // normal budget.
-    //
-    // Example:
-    //
-    //   10+5 -> ~10 + 4.5 = ~14.5 sec
-    //
-    // This keeps the clock roughly stable rather than banking
-    // large amounts of time.
-    // --------------------------------------------------------
-
-    double play_time =
-        base_time +
-        increment_seconds * INCREMENT_USAGE;
+    double play_time = base_time;
 
     // --------------------------------------------------------
     // Clock drift correction.

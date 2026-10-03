@@ -26,6 +26,35 @@ TEST(Bot, StartingPositionEvaluationIsBalanced)
 }
 
 
+TEST(Bot, CalculateThinkTimeUsesIncrementWithoutSpendingReserve)
+{
+    auto board = std::make_shared<ChessBoard>();
+    board->LoadFEN("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    ChessBot bot(board);
+
+    EXPECT_EQ(
+        bot.CalculateThinkTime(
+            DurationMs(900000), DurationMs(900000),
+            DurationMs(900000), DurationMs(900000),
+            DurationMs(10000), DurationMs(10000)),
+        DurationMs(9500));
+
+    EXPECT_EQ(
+        bot.CalculateThinkTime(
+            DurationMs(180000), DurationMs(180000),
+            DurationMs(180000), DurationMs(180000),
+            DurationMs(5000), DurationMs(5000)),
+        DurationMs(4750));
+
+    EXPECT_EQ(
+        bot.CalculateThinkTime(
+            DurationMs(1000), DurationMs(1000),
+            DurationMs(180000), DurationMs(180000),
+            DurationMs(5000), DurationMs(5000)),
+        DurationMs(750));
+}
+
+
 TEST(Bot, QuiescenceSearchTakesFreeQueen)
 {
     auto board = std::make_shared<ChessBoard>();

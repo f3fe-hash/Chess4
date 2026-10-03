@@ -176,6 +176,13 @@ int main()
         game < NUM_GAMES;
         ++game)
     {
+        std::cout
+            << "Starting game "
+            << (game + 1)
+            << "/"
+            << NUM_GAMES
+            << '\n';
+
         const std::string& fen =
             pgo_positions[game];
 
@@ -370,6 +377,17 @@ int main()
     #endif
 
             std::cout << "\n\n";
+        }
+        else
+        {
+            std::cout
+                << "Game "
+                << (game + 1)
+                << "/"
+                << NUM_GAMES
+                << " completed after "
+                << move_count
+                << " plies.\n";
         }
     }
 

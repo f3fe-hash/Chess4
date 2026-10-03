@@ -416,48 +416,40 @@ std::string UCI::HandleGo(
     constexpr DurationMs INFINITE_TIME_THRESHOLD =
         DurationMs(100000000000);
 
-    for (size_t i = 1; i < tokens.size();)
+    for (size_t i = 1; i < tokens.size(); ++i)
     {
         const std::string& token = tokens[i];
-        ++i;
+        const int tok_idx = ++i;
 
-        if (token == "infinite")
-        {
-            infinite_search = true;
-            continue;
-        }
-        if (token == "ponder")
-        {
-            ponder_search = true;
-            continue;
-        }
-
-        if (i >= tokens.size())
-            break;
-
-        const std::string& value = tokens[i++];
-
-        if (token == "depth")
+        if (token == "depth" && i + 1 < tokens.size())
         {
             search_depth = std::max(
                 std::int64_t(1),
-                ParseInteger(value, 1)
+                ParseInteger(tokens[tok_idx], 1)
             );
+
             depth_set = true;
         }
-        else if (token == "movetime")
+        else if (token == "movetime" &&
+                 i + 1 < tokens.size())
         {
-            search_time = DurationMs(std::max(
-                std::int64_t(1),
-                ParseInteger(value, 1)
-            ));
+            search_time = DurationMs(
+                std::max(
+                    std::int64_t(1),
+                    ParseInteger(tokens[tok_idx], 1)
+                )
+            );
+
             movetime_set = true;
         }
-        else if (token == "nodes")
+        else if (token == "nodes" &&
+                 i + 1 < tokens.size())
         {
             try
             {
-                search_node_limit = std::stoull(value);
+                search_node_limit =
+                    std::stoull(tokens[++i]);
+
                 nodes_set = true;
             }
             catch (...)
@@ -465,39 +457,75 @@ std::string UCI::HandleGo(
                 search_node_limit = 0;
             }
         }
-        else if (token == "wtime")
+        else if (token == "wtime" &&
+                 i + 1 < tokens.size())
         {
-            if (value == "infinite")
+            if (tokens[tok_idx] == "infinite")
                 infinite_search = true;
             else
-            {
-                white_time = DurationMs(std::max(
-                    std::int64_t(0), ParseInteger(value, 0)));
-                if (original_white_time.count() == 0)
-                    original_white_time = white_time;
-            }
+                infinite_search = false;
+
+            white_time = DurationMs(
+                std::max(
+                    std::int64_t(0),
+                    ParseInteger(tokens[tok_idx], 0)
+                )
+            );
+
+            if (original_white_time.count() == 0)
+                original_white_time = white_time;
         }
-        else if (token == "btime")
+        else if (token == "btime" &&
+                 i + 1 < tokens.size())
         {
-            if (value == "infinite")
+            if (tokens[tok_idx] == "infinite")
                 infinite_search = true;
             else
-            {
-                black_time = DurationMs(std::max(
-                    std::int64_t(0), ParseInteger(value, 0)));
-                if (original_black_time.count() == 0)
-                    original_black_time = black_time;
-            }
+                infinite_search = false;
+
+            black_time = DurationMs(
+                std::max(
+                    std::int64_t(0),
+                    ParseInteger(tokens[tok_idx], 0)
+                )
+            );
+
+            if (original_black_time.count() == 0)
+                original_black_time = black_time;
         }
-        else if (token == "winc")
+        else if (token == "winc" &&
+                 i + 1 < tokens.size())
         {
-            white_increment = DurationMs(std::max(
-                std::int64_t(0), ParseInteger(value, 0)));
+            if (tokens[tok_idx] == "infinite")
+                infinite_search = true;
+
+            white_increment = DurationMs(
+                std::max(
+                    std::int64_t(0),
+                    ParseInteger(tokens[tok_idx], 0)
+                )
+            );
         }
-        else if (token == "binc")
+        else if (token == "binc" &&
+                 i + 1 < tokens.size())
         {
-            black_increment = DurationMs(std::max(
-                std::int64_t(0), ParseInteger(value, 0)));
+            if (tokens[tok_idx] == "infinite")
+                infinite_search = true;
+
+            black_increment = DurationMs(
+                std::max(
+                    std::int64_t(0),
+                    ParseInteger(tokens[tok_idx], 0)
+                )
+            );
+        }
+        else if (token == "infinite")
+        {
+            infinite_search = true;
+        }
+        else if (token == "ponder")
+        {
+            ponder_search = true;
         }
     }
 
@@ -651,9 +679,7 @@ void UCI::SearchThread()
         std::cerr
             << "[UCI] [depth " << result.depth << "] "
             << "[mate " << result.mate_in_ply << "] "
-            << "[nodes " << result.nodes_searched
-            << " (main " << result.main_nodes_searched
-            << ", q " << result.quiescence_nodes_searched << ")]"
+            << "[nodes " << result.nodes_searched << "]"
             << '\n';;
     }
     else
@@ -664,9 +690,7 @@ void UCI::SearchThread()
             << std::fixed
             << std::setprecision(2)
             << result.eval / 100 << "] "
-            << "[nodes " << result.nodes_searched
-            << " (main " << result.main_nodes_searched
-            << ", q " << result.quiescence_nodes_searched << ")]"
+            << "[nodes " << result.nodes_searched << "]"
             << '\n';
     }
 
