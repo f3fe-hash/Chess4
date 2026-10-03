@@ -7,6 +7,7 @@ LICHESS_TOKEN = os.environ.get("LICHESS_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 UCI_HOST = os.environ.get("UCI_HOST", "127.0.0.1")
+UCI_HOST_BACKUP = os.environ.get("UCI_HOST_BACKUP", "127.0.0.1")
 UCI_PORT = int(os.environ.get("UCI_PORT", "8080"))
 
 # Maximum number of games this process will play simultaneously.

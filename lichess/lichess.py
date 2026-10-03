@@ -335,8 +335,19 @@ class UCIClient:
     A separate UCIClient is created for every active Lichess game.
     """
 
-    def __init__(self, host: str, port: int, game_id: str):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        game_id: str,
+        backup_host: Optional[str] = None,
+    ):
         self.host = host
+        self.backup_host = (
+            backup_host
+            if backup_host and backup_host != host
+            else None
+        )
         self.port = port
         self.game_id = game_id
 
@@ -353,6 +364,8 @@ class UCIClient:
         """
 
         attempt = 0
+        host = self.host
+        using_backup = False
         last_error: Optional[Exception] = None
 
         while True:
@@ -362,12 +375,12 @@ class UCIClient:
 
             log(
                 f"[{self.game_id}] Connecting to UCI "
-                f"{self.host}:{self.port}"
+                f"{host}:{self.port}"
             )
 
             try:
                 sock = socket.create_connection(
-                    (self.host, self.port),
+                    (host, self.port),
                     timeout=10,
                 )
 
@@ -388,21 +401,42 @@ class UCIClient:
                 self.send("isready")
                 self.wait_for("readyok")
 
-                log(f"[{self.game_id}] UCI connection ready")
+                log(
+                    f"[{self.game_id}] UCI connection ready "
+                    f"on {host}:{self.port}"
+                )
                 return
 
             except (ConnectionError, OSError) as exc:
                 last_error = exc
                 self.close()
 
+                if (
+                    not using_backup
+                    and self.backup_host is not None
+                    and attempt >= RETRY_COUNT
+                ):
+                    log_error(
+                        f"[{self.game_id}] UCI primary host "
+                        f"{self.host}:{self.port} failed after "
+                        f"{attempt} attempts; switching to backup "
+                        f"{self.backup_host}:{self.port}: {exc}"
+                    )
+                    host = self.backup_host
+                    using_backup = True
+                    attempt = 0
+                    continue
+
                 if attempt % RETRY_COUNT == 0:
                     log_error(
-                        f"[{self.game_id}] UCI connection still failing "
+                        f"[{self.game_id}] UCI connection to "
+                        f"{host}:{self.port} still failing "
                         f"after {attempt} attempts: {exc}"
                     )
                 else:
                     log_error(
-                        f"[{self.game_id}] UCI connection failed "
+                        f"[{self.game_id}] UCI connection to "
+                        f"{host}:{self.port} failed "
                         f"(attempt {attempt}): {exc}; "
                         f"retrying in {RETRY_DELAY_SECONDS}s"
                     )
@@ -642,6 +676,7 @@ class GameWorker:
                 UCI_HOST,
                 UCI_PORT,
                 self.game_id,
+                backup_host=UCI_HOST_BACKUP,
             )
 
             self.engine.connect()
