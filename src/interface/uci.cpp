@@ -635,10 +635,21 @@ void UCI::SearchThread()
 
     if (result.mate_in_ply >= 0)
     {
+        const bool white_to_move =
+            board->GetTurnColor() == TURN_WHITE;
+
+        const bool white_mating =
+            result.eval > 0;
+
+        // Convert ply to moves, rounding up.
+        const std::int64_t mate_moves =
+            (result.mate_in_ply + 1) / 2;
+
         const std::int64_t mate_score =
-            result.eval > 0
-                ? result.mate_in_ply
-                : -result.mate_in_ply;
+            (white_to_move == white_mating)
+                ? mate_moves
+                : -mate_moves;
+
         const std::string mate_score_string =
             mate_score > 0
                 ? "+" + std::to_string(mate_score)
@@ -684,9 +695,18 @@ void UCI::SearchThread()
     // If a mate was found, print it.
     if (result.mate_in_ply >= 0)
     {
+        const std::int64_t mate_score =
+            result.eval > 0
+                ? result.mate_in_ply
+                : -result.mate_in_ply;
+        const std::string mate_score_string =
+            mate_score > 0
+                ? "+" + std::to_string(mate_score)
+                : std::to_string(mate_score);
+        
         std::cerr
             << "[UCI] [depth " << result.depth << "] "
-            << "[mate " << result.mate_in_ply << "] "
+            << "[mate " << mate_score_string << "] "
             << "[nodes " << result.nodes_searched << "]"
             << '\n';;
     }

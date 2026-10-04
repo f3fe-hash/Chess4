@@ -1439,14 +1439,15 @@ Evaluation ChessBot::MainSearch(
     // Exact result.
     // --------------------------------------------------------
 
-    Evaluation stored_eval =
-        NormalizeMateScore(best_eval, ply);
-
-    transposition_table->SetExact(
-        key,
-        stored_eval,
-        static_cast<uint8_t>(depth)
-    );
+    if (std::abs(best_eval) < 1000)
+    {
+        // Mates can cause TT issues. Don't store them.
+        transposition_table->SetExact(
+            key,
+            best_eval,
+            static_cast<uint8_t>(depth)
+        );
+    }
 
     if (!best_move.IsNull())
     {

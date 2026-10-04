@@ -14,15 +14,15 @@
 #ifdef RELEASE
 // We don't really want to replace many
 // entries in release mode, as it is expensive.
-inline const int BUCKET_ENTRIES = 32;
-
-// More buckets in release mode
-inline const int BUCKETS = 16384;
-#else
-// For debug, use smaller bucket sizes.
 inline const int BUCKET_ENTRIES = 16;
 
-inline const int BUCKETS = 4096;
+// More buckets in release mode
+inline const int BUCKETS = 65535;
+#else
+// For debug, use smaller bucket sizes.
+inline const int BUCKET_ENTRIES = 8;
+
+inline const int BUCKETS = 4095;
 #endif
 
 
